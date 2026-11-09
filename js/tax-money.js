@@ -86,7 +86,7 @@
     ['Foreign assets disclosure', 'Report all foreign shares and accounts in Schedule FA of ITR-2, even if you sold nothing.', 'Missing it can bring heavy penalties under the Black Money Act. Many people with US RSUs forget this.'],
   ];
   const FREELANCE = [
-    ['Presumptive scheme (44ADA)', 'Declare 50% of your receipts as profit, without keeping detailed books. For professionals, including software developers, with receipts up to ₹75 lakh if at most 5% is in cash (₹50 lakh otherwise). File ITR-4.'],
+    ['Presumptive scheme (44ADA)', 'Declare 50% of your receipts as profit, without keeping detailed books. For professionals, including software developers, with receipts up to ₹75 lakh if at most 5% is in cash (₹50 lakh otherwise). File ITR-4 if your total income is up to ₹50 lakh, ITR-3 above that.'],
     ['Advance tax', 'No employer deducts tax for you. Under the presumptive scheme, pay all of it by 15 March; otherwise in four parts (15 June 15%, 15 September 45%, 15 December 75%, 15 March 100%). Late payment means interest.'],
     ['GST', 'Registration is needed above ₹20 lakh turnover in a year (₹10 lakh in some states). Services to foreign clients count as exports: with a Letter of Undertaking (LUT) you charge 0% GST.'],
     ['Getting paid', 'Bank transfer (SWIFT), Wise, Skydo, Payoneer and similar: compare fees and the exchange-rate markup. Keep the FIRC / e-FIRA (proof of foreign payment) for every payment.'],

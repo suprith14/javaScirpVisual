@@ -101,7 +101,7 @@ orders per delivery partner per hour push it up.`;
   const SERVICES = [
     ['How IT services earn', 'A client pays for engineers: "time and material" (a rate per person per hour or month) or "fixed price" (one price for a project). Profit = what clients pay − salaries and overheads.'],
     ['Utilisation', 'The share of engineers billed to a client. Unbilled engineers ("on the bench") cost money and earn nothing, which is why the bench is managed closely.'],
-    ['Margins', 'Large Indian IT services companies earn operating margins of roughly 20–25%. Rate pressure from clients and salary hikes squeeze them, which is why yearly hikes are often modest.'],
+    ['Margins', 'Large Indian IT services companies earn operating margins of roughly 15–25% (TCS around the top of that range). Rate pressure from clients and salary hikes squeeze them, which is why yearly hikes are often modest.'],
     ['Onsite and offshore', 'Work done from India costs clients much less than onsite work abroad; a mix of both is common. Onsite roles bill at higher rates.'],
     ['Why certifications and skills matter', 'Engineers with in-demand skills (cloud, AI, specific platforms) can be billed at higher rates, so companies push for them.'],
     ['GCCs are cost centres', 'A Global Capability Centre is part of a foreign company. It does not sell to customers; it gets a budget from the parent, so the question is "is this team worth its cost?", not "does it make a profit?".'],

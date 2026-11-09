@@ -58,7 +58,7 @@ git push --force-with-lease`;
     'Sign the CLA (contributor licence agreement) or add a DCO sign-off when the project asks.',
   ];
   const PROGRAMMES = [
-    ['Google Summer of Code', 'Paid, about 12+ weeks with a mentor; for students and people new to open source', 'Proposals around March–April'],
+    ['Google Summer of Code', 'Paid, with a mentor; projects of about 90, 175 or 350 hours over 8–22 weeks; for students and people new to open source (18+)', 'Proposals around March–April'],
     ['Outreachy', 'Paid internships for people underrepresented in tech', 'Two rounds a year'],
     ['LFX Mentorship (Linux Foundation)', 'Paid mentorships on Linux Foundation and CNCF projects', 'Three terms a year'],
     ['Hacktoberfest', 'Contribute in October; quality rules against spam', 'Every October'],

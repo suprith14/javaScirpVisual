@@ -663,6 +663,27 @@
       const shown = [...D().querySelectorAll('#clBody .co-names span')].filter(s => !s.hidden).map(s => s.textContent);
       if (!shown.includes('Razorpay') || shown.some(s => !/razorpay/i.test(s)) || D().activeElement !== box) bad.push(`company search: ${shown.slice(0, 5).join(', ')}`);
       box.value = ''; box.dispatchEvent(new w.Event('input', { bubbles: true })); await sleep(15);
+      // type chips filter the lists; names with a profile open it
+      click(q('#clBody [data-cltype="services"]')); await sleep(15);
+      const svc = [...D().querySelectorAll('#clBody .co-names span')].filter(s => !s.hidden).map(s => s.textContent);
+      if (!svc.includes('TCS') || svc.includes('Flipkart')) bad.push('company type filter');
+      click(q('#clBody [data-cltype="all"]')); await sleep(15);
+      click(q('#clBody [data-clprof="Flipkart"]')); await sleep(15);
+      const fk = q('#clBody .cl-prof[data-name="Flipkart"]');
+      if (!fk || !fk.open || fk.hidden || !/machine-coding/.test(fk.textContent)) bad.push('clicking a company did not open its profile');
+      if (C.profiles.length < 100 || new Set(C.profiles.map(p => p[0])).size !== C.profiles.length || C.profiles.some(p => p.length !== 8 || p.some(x => !x))) bad.push(`company profiles: ${C.profiles.length}`);
+      const pbox = q('#clpSearch'); pbox.value = ''; pbox.dispatchEvent(new w.Event('input', { bubbles: true })); await sleep(15);
+      click(q('#clBody [data-clfresh]')); await sleep(15);
+      const fresh = [...D().querySelectorAll('#clBody .cl-prof')].filter(d => !d.hidden);
+      if (!fresh.length || fresh.some(d => d.dataset.fresh !== '1')) bad.push('freshers filter');
+      click(q('#clBody [data-clfresh]')); await sleep(15);
+      click(q('#clBody [data-clregion="cities"]')); await sleep(15);
+      if (!/Pune/.test(q('#clBody').textContent) || !/Hyderabad/.test(q('#clBody').textContent)) bad.push('other cities missing');
+      click(q('#clBody [data-clregion="jobs"]')); await sleep(15);
+      if (!/Naukri/.test(q('#clBody').textContent) || !/greenhouse/.test(q('#clBody').textContent) || !/1930/.test(q('#clBody').textContent)) bad.push('Find jobs view');
+      click(q('#clBody [data-clregion="research"]')); await sleep(15);
+      if (!/Red flags/.test(q('#clBody').textContent) || D().querySelectorAll('#clBody tbody tr').length < 9) bad.push('Research view');
+      click(q('#clBody [data-clregion="india"]')); await sleep(15);
       const oneLine = $('btnPractice').getBoundingClientRect().top === $('btnCompanies').getBoundingClientRect().top && $('btnPractice').getBoundingClientRect().top === $('btnTopics').getBoundingClientRect().top;
       if (!oneLine) bad.push('the top bar wraps');
       C.close(); L.open();
@@ -737,7 +758,7 @@
 
     await check('🤖 AI at work, 🧾 Tax & money, 🌱 Open source: every step draws, details, quizzes, practice tasks; the tax calculator is right', async () => {
       const w = frame.contentWindow, bad = [];
-      for (const [api, btn, p, cat, icon, n] of [['AiWorkLab', 'btnAi', 'ai', 'AI at work', '🤖', 8], ['TaxLab', 'btnTax', 'tx', 'Tax & money', '🧾', 8], ['OssLab', 'btnOss', 'os', 'Open source', '🌱', 8], ['EarnLab', 'btnEarn', 'em', 'Earning more', '💸', 8], ['FreelanceLab', 'btnFreelance', 'fl', 'Freelancing', '🧑‍💻', 10], ['DesignLab', 'btnDesign', 'ds', 'Design basics', '🎨', 8], ['CurrentLab', 'btnCurrent', 'sc', 'Staying current', '📰', 6], ['HealthLab', 'btnHealth', 'hc', 'Health & career', '🧘', 6], ['BusinessLab', 'btnBusiness', 'bz', 'How companies work', '🏦', 8]]) {
+      for (const [api, btn, p, cat, icon, n] of [['AiWorkLab', 'btnAi', 'ai', 'AI at work', '🤖', 8], ['TaxLab', 'btnTax', 'tx', 'Tax & money', '🧾', 8], ['OssLab', 'btnOss', 'os', 'Open source', '🌱', 8], ['EarnLab', 'btnEarn', 'em', 'Earning more', '💸', 8], ['FreelanceLab', 'btnFreelance', 'fl', 'Freelancing', '🧑‍💻', 10], ['DesignLab', 'btnDesign', 'ds', 'Design basics', '🎨', 8], ['CurrentLab', 'btnCurrent', 'sc', 'Staying current', '📰', 6], ['HealthLab', 'btnHealth', 'hc', 'Health & career', '🧘', 6], ['BusinessLab', 'btnBusiness', 'bz', 'How companies work', '🏦', 13]]) {
         const L = w[api];
         if (btn !== 'btnEarn') { click('btnTopics'); await sleep(20); } // Earn more is on the top bar itself
         click(btn); await sleep(80);
@@ -858,11 +879,17 @@
       if (!/present \(role, skills\)/.test(txt()) || !q('#ghBody pre')) bad.push('HR details');
       click('ghDetail'); await sleep(20);
       L.goKey('quiz'); await sleep(20);
-      click(q('#ghBody [data-ghq="1"][data-gha="silent"]')); await sleep(20);
+      click(q('#ghBody [data-ghq="4"][data-gha="silent"]')); await sleep(20);
       if (!q('#ghBody .db-q.no') || !/ask for a hint/.test(q('#ghBody .db-q.no').textContent)) bad.push('quiz');
       if (!L.situations.every(x => x.choices.some(c => c[0] === x.a))) bad.push('an answer is not a choice');
       const inList = w.JSPractice.list().filter(x => x.topic === 'Interview strategy');
-      if (inList.length !== 12 || inList.some(x => x.icon !== '🏆')) bad.push('practice tasks ' + inList.length);
+      if (inList.length !== 15 || inList.some(x => x.icon !== '🏆')) bad.push('practice tasks ' + inList.length);
+      // presenting a project: 9 parts + 5 rules, a template, 15 follow-up questions; the full example answer only with details
+      L.goKey('project'); await sleep(20);
+      if (D().querySelectorAll('#ghBody .db-card').length !== 14 || !/Fill-in template/.test(txt()) || D().querySelectorAll('#ghBody tbody tr').length !== 15 || /An example 2-minute answer/.test(txt())) bad.push('present your project (brief)');
+      click('ghDetail'); await sleep(20);
+      if (!/An example 2-minute answer/.test(txt()) || !/we gave up/.test(txt())) bad.push('present your project (details)');
+      click('ghDetail'); await sleep(15);
       // the human side: each person, objections (scripts only, so details must still be available), closing
       L.goKey('people'); await sleep(20);
       if (D().querySelectorAll('#ghBody .db-card').length !== 5 || !/The hiring manager/.test(txt())) bad.push('people');

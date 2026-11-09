@@ -1140,3 +1140,15 @@ kbd { display: inline-block; min-width: 18px; padding: 1px 6px; border: 1px soli
 .ds-demo { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 12px; margin: 8px 0 12px; }
 .ds-card > small { display: block; color: var(--muted); margin-bottom: 4px; }
 .ds-card > div { background: #fff; color: #1f2328; border-radius: 10px; border: 1px solid #d0d7de; }
+
+/* Companies: type chips, profiles */
+.cl-types { margin: 6px 0 2px; }
+.co-names span.cl-has { cursor: pointer; text-decoration: underline dotted; text-underline-offset: 3px; border-color: var(--accent); }
+.co-names span.cl-has:hover, .co-names span.cl-has:focus-visible { background: var(--accent); color: #fff; }
+.cl-profs { display: flex; flex-direction: column; gap: 6px; margin: 8px 0; }
+.cl-prof { border: 1px solid var(--line); border-radius: 8px; background: var(--panel2); padding: 6px 10px; }
+.cl-prof[hidden] { display: none; }
+.cl-prof summary { cursor: pointer; display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.cl-prof table { margin-top: 6px; }
+.cl-prof td:first-child { white-space: nowrap; color: var(--muted); width: 1%; }
+.cl-tag { font-size: 11.5px; padding: 1px 8px; border-radius: 999px; border: 1px solid var(--line); color: var(--muted); }

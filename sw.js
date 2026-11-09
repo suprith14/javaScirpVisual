@@ -3,7 +3,7 @@
  * once it has been opened over http(s) (for example with "npx serve" or GitHub Pages).
  * Change VERSION whenever you change the files, so visitors get the new version.
  */
-const VERSION = 'js-engine-lab-v45';
+const VERSION = 'js-engine-lab-v48';
 const FILES = [
   "./",
   "index.html",
@@ -30,6 +30,7 @@ const FILES = [
   "js/devtools.js",
   "js/interview-prep.js",
   "js/companies-data.js",
+  "js/company-profiles.js",
   "js/corporate.js",
   "js/terminal.js",
   "js/roles-pay.js",

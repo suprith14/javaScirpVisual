@@ -366,42 +366,139 @@
   document.addEventListener('keydown', e => { if (e.key === 'Escape' && $('coLab') && !$('coLab').classList.contains('hidden')) close(); });
 
   // ------------------------------------------------------------ 🏙️ Companies: its own window, opened from the top bar
-  const CL = { region: 'india', q: '' };
-  document.addEventListener('input', e => { if (e.target.id === 'clSearch') { CL.q = e.target.value; filterCompanies(); } });
+  const CL = { region: 'india', q: '', type: 'all', pq: '', ptype: 'all', fresh: false, open: '' };
+  const PROFILES = window.COMPANY_PROFILES || [];
+  const PROFILE = new Map(PROFILES.map(p => [p[0], p]));
+  const profileOf = n => PROFILE.get(n) || PROFILE.get(n.replace(/\s*\(.*\)$/, ''));
+  const CITY_LIST = window.COMPANY_CITIES || [];
+  // company type, guessed from the category name (for the type chips on the name lists)
+  const TYPES = [['all', 'All'], ['big', 'Big tech'], ['product', 'Product & startups'], ['gcc', 'GCCs'], ['services', 'IT services & consulting'], ['studio', 'Agencies & studios']];
+  const typeOf = cat => /big tech/i.test(cat) ? 'big'
+    : /GCC|banks|chips|engineering, health|financial groups/i.test(cat) ? 'gcc'
+    : /IT services|consult|engineering companies/i.test(cat) ? 'services'
+    : /agenc|studio/i.test(cat) ? 'studio' : 'product';
+  const listOf = r => r === 'cities' ? CITY_LIST : COMPANY_LIST[r];
+  const TYPED = ['india', 'bengaluru', 'cities'];
+  const link = (href, label) => `<a href="${esc(href)}" target="_blank" rel="noopener">${esc(label)}</a>`;
+  const tbl = (head, rows) => `<table class="iv-diff db-words"><thead><tr>${head.map(h => `<th>${esc(h)}</th>`).join('')}</tr></thead><tbody>${rows.map(r => `<tr>${r.map((c, i) => `<td>${i ? esc(c) : `<b>${esc(c)}</b>`}</td>`).join('')}</tr>`).join('')}</tbody></table>`;
+  const ul = items => `<ul>${items.map(x => `<li>${esc(x)}</li>`).join('')}</ul>`;
+  document.addEventListener('input', e => {
+    if (e.target.id === 'clSearch') { CL.q = e.target.value; filterCompanies(); }
+    if (e.target.id === 'clpSearch') { CL.pq = e.target.value; CL.open = ''; filterProfiles(); }
+  });
   function drawCompanies() {
-    const regions = [['india', '🇮🇳 India'], ['bengaluru', '📍 Bengaluru'], ['abroad', '✈️ Abroad'], ['remote', '🏠 Remote-only'], ['count', '📊 How many?']];
-    const count = r => COMPANY_LIST[r] ? ` <small>(${COMPANY_LIST[r].reduce((n, [, s]) => n + s.split(', ').length, 0)})</small>` : '';
+    const regions = [['india', '🇮🇳 India'], ['bengaluru', '📍 Bengaluru'], ['cities', '🏙️ Other cities'], ['abroad', '✈️ Abroad'], ['remote', '🏠 Remote-only'], ['profiles', '🔎 Profiles'], ['jobs', '🧭 Find jobs'], ['research', '🕵️ Research a company'], ['count', '📊 How many?']];
+    const count = r => r === 'cities' ? ` <small>(${CITY_LIST.length} groups)</small>`
+      : COMPANY_LIST[r] ? ` <small>(${COMPANY_LIST[r].reduce((n, [, s]) => n + s.split(', ').length, 0)})</small>`
+      : r === 'profiles' ? ` <small>(${PROFILES.length})</small>` : '';
     const bar = `<div class="dp-walks">${regions.map(([k, l]) => `<button class="btn small cl-choice${CL.region === k ? ' on' : ''}" data-clregion="${k}">${l}${count(k)}</button>`).join('')}</div>`;
+    const body = $('clBody');
     if (CL.region === 'count') {
       const N = window.COMPANY_COUNTS || { india: [], bengaluru: [], note: '' };
       const table = (title, rows) => `<h4 class="ip-group">${title}</h4><table class="iv-diff db-words"><tbody>${rows.map(([what, n, src]) => `<tr><td>${esc(what)}</td><td><b>${esc(n)}</b></td><td class="cl-note">${esc(src)}</td></tr>`).join('')}</tbody></table>`;
-      $('clBody').innerHTML = `${bar}${table('🇮🇳 India', N.india)}${table('📍 Bengaluru', N.bengaluru)}<p class="cl-note">${esc(N.note)}</p>`;
+      body.innerHTML = `${bar}${table('🇮🇳 India', N.india)}${table('📍 Bengaluru', N.bengaluru)}<p class="cl-note">${esc(N.note)}</p>`;
       return;
     }
-    $('clBody').innerHTML = `${bar}
-      <p class="cl-note">${esc(LIST_NOTES[CL.region])}</p>
+    if (CL.region === 'profiles') { body.innerHTML = bar + profilesHTML(); filterProfiles(); return; }
+    if (CL.region === 'jobs') { body.innerHTML = bar + jobsHTML(); return; }
+    if (CL.region === 'research') { body.innerHTML = bar + researchHTML(); return; }
+    const typed = TYPED.includes(CL.region);
+    const note = CL.region === 'cities' ? 'Bengaluru has its own list. These are well-known companies with large tech teams in other hubs; many companies in the India list also hire in these cities.' : LIST_NOTES[CL.region];
+    body.innerHTML = `${bar}
+      <p class="cl-note">${esc(note)} Underlined names have a profile: click one.</p>
       <input type="search" id="clSearch" class="cl-search" placeholder="🔍 Search a company or category…" aria-label="Search companies" value="${esc(CL.q)}">
+      ${typed ? `<div class="cl-choices cl-types">${TYPES.map(([k, l]) => `<button class="btn small cl-choice${CL.type === k ? ' on' : ''}" data-cltype="${k}">${l}</button>`).join('')}</div>` : ''}
       <p class="cl-note" id="clHits"></p>
-      ${COMPANY_LIST[CL.region].map(([cat, names]) => `<section class="cl-cat"><h4 class="ip-group">${esc(cat)}</h4><div class="co-names">${names.split(', ').map(n => `<span>${esc(n)}</span>`).join('')}</div></section>`).join('')}
+      ${listOf(CL.region).map(([cat, names]) => `<section class="cl-cat" data-type="${typed ? typeOf(cat) : 'all'}"><h4 class="ip-group">${esc(cat)}</h4><div class="co-names">${names.split(', ').map(n => {
+        const p = profileOf(n);
+        return p ? `<span class="cl-has" role="button" tabindex="0" data-clprof="${esc(p[0])}">${esc(n)}</span>` : `<span>${esc(n)}</span>`;
+      }).join('')}</div></section>`).join('')}
       <p class="cl-note">Which kind of company suits you, how they interview, and red flags: see 💼 Corporate life → Company types.</p>`;
     filterCompanies();
   }
   // Filter in place (no redraw), so the search box keeps focus while typing.
   function filterCompanies() {
-    const q = CL.q.trim().toLowerCase();
+    const q = CL.q.trim().toLowerCase(), typed = TYPED.includes(CL.region);
     let hits = 0;
     $('clBody').querySelectorAll('.cl-cat').forEach(sec => {
+      const typeOk = !typed || CL.type === 'all' || sec.dataset.type === CL.type;
       const catHit = !q || sec.querySelector('h4').textContent.toLowerCase().includes(q);
       let shown = 0;
       sec.querySelectorAll('.co-names span').forEach(s => {
-        const ok = catHit || s.textContent.toLowerCase().includes(q);
+        const ok = typeOk && (catHit || s.textContent.toLowerCase().includes(q));
         s.hidden = !ok;
         if (ok) shown++;
       });
       sec.hidden = !shown;
       hits += shown;
     });
-    $('clHits').textContent = q ? (hits ? `${hits} match${hits === 1 ? '' : 'es'}` : 'No match in this region: try another region.') : '';
+    const filtering = q || (typed && CL.type !== 'all');
+    $('clHits').textContent = filtering ? (hits ? `${hits} compan${hits === 1 ? 'y' : 'ies'}` : 'No match here: try another region or type.') : '';
+  }
+
+  // 🔎 Profiles
+  function profilesHTML() {
+    const types = ['all', ...new Set(PROFILES.map(p => p[1]))];
+    return `<p class="cl-note">Short profiles of ${PROFILES.length} well-known employers. Stacks are what each company has shown in public; interview notes are the commonly reported pattern. Both change, so check recent job posts and interview experiences.</p>
+      <input type="search" id="clpSearch" class="cl-search" placeholder="🔍 Search a company, city or stack (e.g. Next.js, Pune)…" aria-label="Search profiles" value="${esc(CL.pq)}">
+      <div class="cl-choices cl-types">${types.map(k => `<button class="btn small cl-choice${CL.ptype === k ? ' on' : ''}" data-clptype="${esc(k)}">${k === 'all' ? 'All' : esc(k)}</button>`).join('')}
+        <button class="btn small cl-choice${CL.fresh ? ' on' : ''}" data-clfresh>🎓 Hires freshers</button></div>
+      <p class="cl-note" id="clpHits"></p>
+      <div class="cl-profs">${PROFILES.map(profileHTML).join('')}</div>
+      <details class="px-more"><summary>What the pay tiers mean</summary>${tbl(['Tier', 'Meaning'], window.COMPANY_PAY_TIERS || [])}<p class="cl-note">Rough labels, not numbers: see 💰 Roles & pay → Pay ranges for ranges by level.</p></details>`;
+  }
+  function profileHTML([name, type, where, builds, stack, interview, tier, fresh]) {
+    const q = encodeURIComponent;
+    return `<details class="cl-prof" data-name="${esc(name)}" data-type="${esc(type)}" data-fresh="${/^yes/i.test(fresh) ? 1 : 0}"${CL.open === name ? ' open' : ''}>
+      <summary><b>${esc(name)}</b> <span class="cl-tag">${esc(type)}</span> <span class="cl-tag">💰 ${esc(tier)}</span> <span class="cl-tag">🎓 Freshers: ${esc(fresh)}</span></summary>
+      <table class="iv-diff db-words"><tbody>
+        <tr><td>Where</td><td>${esc(where)}</td></tr>
+        <tr><td>Frontend builds</td><td>${esc(builds)}</td></tr>
+        <tr><td>Stack</td><td>${esc(stack)}</td></tr>
+        <tr><td>Interview</td><td>${esc(interview)}</td></tr>
+      </tbody></table>
+      <p class="cl-note">Look up: ${link(`https://www.google.com/search?q=${q(name + ' careers frontend')}`, 'careers page')} · ${link(`https://www.linkedin.com/jobs/search/?keywords=${q(name + ' frontend')}`, 'LinkedIn jobs')} · ${link(`https://www.google.com/search?q=${q(name + ' ambitionbox reviews')}`, 'reviews')} · ${link(`https://www.google.com/search?q=${q(name + ' frontend interview experience')}`, 'interview experiences')}</p>
+    </details>`;
+  }
+  function filterProfiles() {
+    const q = CL.pq.trim().toLowerCase();
+    let hits = 0;
+    $('clBody').querySelectorAll('.cl-prof').forEach(d => {
+      const ok = (CL.ptype === 'all' || d.dataset.type === CL.ptype) && (!CL.fresh || d.dataset.fresh === '1') && (!q || d.textContent.toLowerCase().includes(q));
+      d.hidden = !ok;
+      if (ok) hits++;
+    });
+    $('clpHits').textContent = `${hits} of ${PROFILES.length} shown`;
+  }
+  function showProfile(name) {
+    Object.assign(CL, { region: 'profiles', pq: name, ptype: 'all', fresh: false, open: name });
+    drawCompanies();
+    const d = $('clBody').querySelector(`.cl-prof[data-name="${CSS.escape(name)}"]`);
+    if (d && d.scrollIntoView) d.scrollIntoView({ block: 'nearest' });
+  }
+
+  // 🧭 Find jobs
+  function jobsHTML() {
+    const G = window.COMPANY_GUIDE;
+    return `<p class="cl-note">Where frontend jobs are posted, how to search them, and how to get referred. 🏆 Get hired → Getting interviews covers resumes and the overall strategy.</p>
+      <h4 class="ip-group">Where jobs are posted</h4>${tbl(['Where', 'Best for', 'Tip'], G.boards)}
+      <h4 class="ip-group">Search strings that find hidden posts</h4>
+      <p class="cl-note">Many startups post only on Greenhouse, Lever or Ashby. Paste these into Google or LinkedIn and change the city or role.</p>
+      ${tbl(['Where', 'Search'], G.searches)}
+      <h4 class="ip-group">Getting a referral</h4><ol>${G.referral.map(x => `<li>${esc(x)}</li>`).join('')}</ol>
+      <details class="px-more"><summary>Message templates</summary>${G.templates.map(([t, m]) => `<p><b>${esc(t)}</b></p><pre class="px-src">${esc(m)}</pre>`).join('')}</details>
+      <h4 class="ip-group">A weekly routine</h4>${tbl(['When', 'What'], G.routine)}
+      <h4 class="ip-group">⚠️ Fake jobs and scams</h4>${ul(G.scams)}`;
+  }
+
+  // 🕵️ Research a company
+  function researchHTML() {
+    const G = window.COMPANY_GUIDE;
+    return `<p class="cl-note">Do this in about 15 minutes before you apply, and again before you accept an offer. It also gives you strong things to say in interviews.</p>
+      <h4 class="ip-group">The checklist</h4>${tbl(['Step', 'Where', 'Look for'], G.research)}
+      <div class="db-grid"><div class="db-card"><div class="db-h"><b>✅ Green flags</b></div>${ul(G.green)}</div><div class="db-card"><div class="db-h"><b>🚩 Red flags</b></div>${ul(G.red)}</div></div>
+      <h4 class="ip-group">Questions to ask in your interviews</h4>${ul(G.ask)}
+      <p class="cl-note">More: 💼 Corporate life → Company types (which kind suits you) and 🏦 How companies work (business models, funding, layoffs).</p>`;
   }
   function openCompanies(region) {
     let m = $('companiesLab');
@@ -414,7 +511,7 @@
       m.innerHTML = `<div class="modal-card wide cl-lab px-card">
         <button class="close" data-clclose aria-label="Close">✕</button>
         <div class="cl-head"><h2 class="modal-title">🏙️ Companies hiring frontend developers</h2></div>
-        <p class="px-say">Names only, by category: look up each one's careers page yourself. Hiring changes all the time, so a name here does not mean an opening today.</p>
+        <p class="px-say">Names by region and type, profiles of well-known employers, where jobs are posted, and how to research a company. Hiring changes all the time, so a name here does not mean an opening today.</p>
         <div class="px-main db-main"><div class="px-view" id="clBody"></div></div>
       </div>`;
       document.body.appendChild(m);
@@ -432,10 +529,22 @@
     if (!$('companiesLab') || $('companiesLab').classList.contains('hidden')) return;
     const r = t.closest('[data-clregion]');
     if (r) { CL.region = r.dataset.clregion; drawCompanies(); return; }
+    const ty = t.closest('[data-cltype]');
+    if (ty) { CL.type = ty.dataset.cltype; $('clBody').querySelectorAll('[data-cltype]').forEach(x => x.classList.toggle('on', x === ty)); filterCompanies(); return; }
+    const pt = t.closest('[data-clptype]');
+    if (pt) { CL.ptype = pt.dataset.clptype; $('clBody').querySelectorAll('[data-clptype]').forEach(x => x.classList.toggle('on', x === pt)); filterProfiles(); return; }
+    const fr = t.closest('[data-clfresh]');
+    if (fr) { CL.fresh = !CL.fresh; fr.classList.toggle('on', CL.fresh); filterProfiles(); return; }
+    const pr = t.closest('[data-clprof]');
+    if (pr) { showProfile(pr.dataset.clprof); return; }
     if (t.closest('[data-clclose]')) closeCompanies();
   });
-  document.addEventListener('keydown', e => { if (e.key === 'Escape') closeCompanies(); });
-  window.CompaniesLab = { open: openCompanies, close: closeCompanies, region: r => { CL.region = r; drawCompanies(); }, companies: COMPANY_LIST };
+  document.addEventListener('keydown', e => {
+    if (e.key === 'Escape') closeCompanies();
+    const pr = (e.key === 'Enter' || e.key === ' ') && e.target.closest && e.target.closest('[data-clprof]');
+    if (pr) { e.preventDefault(); showProfile(pr.dataset.clprof); }
+  });
+  window.CompaniesLab = { open: openCompanies, close: closeCompanies, region: r => { CL.region = r; drawCompanies(); }, profile: showProfile, companies: COMPANY_LIST, cities: CITY_LIST, profiles: PROFILES };
 
   window.CorporateLab = { open, close, go: i => { UI.stage = i; draw(); }, goKey: k => { UI.stage = STAGES.findIndex(s => s.key === k); draw(); }, situations: SITUATIONS, stages: STAGES };
 })();

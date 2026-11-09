@@ -49,6 +49,22 @@
       { t: 'System design', b: 'You drive: requirements, then architecture, data, API, optimisations (RADIO). Draw and keep it simple first.', d: 'Check in with the interviewer: "Should I go deeper into the data layer or into performance?" They often have a direction in mind.' },
       { t: 'When you are stuck', b: 'Say what you are thinking, try a smaller example, or solve a simpler version first; it is fine to ask for a hint.', d: 'Taking a hint well and moving forward scores far better than silence. Interviewers want to see how you work through difficulty.' },
     ] },
+    { key: 'project', name: 'Present your project', title: 'Presenting a project you worked on', say: 'Interviewers are impressed when you show why the project existed, the decisions you made on purpose, a hard problem you solved, and proof of the result, not a list of features.', extra: () => projectExtra(), cards: [
+      { t: '1 · One-line summary', b: 'What it is, who uses it, how big. Start here so the interviewer has a picture.', d: 'Mention users, scale or traffic if you know them. One sentence, then move on.', ex: '"A booking dashboard used by about 200 clinics to manage appointments and reminders."' },
+      { t: '2 · The problem it solved', b: 'The business or user reason it was built. This shows product sense, which most candidates skip.', d: 'Who was hurting, and how did you know (complaints, data, a request from sales)?', ex: '"Clinics managed slots in spreadsheets, so patients were double-booked and front desks spent hours on calls."' },
+      { t: '3 · Your part, honestly', b: 'Team size, your role, and what you personally built. "I" for your work, "we" for the team\'s.', d: 'Interviewers will test your claims with deep questions. Claiming the whole project and then failing on details is worse than a smaller, honest role.', ex: '"We were 4 developers. I owned the scheduling calendar and the frontend performance work; I also reviewed most frontend PRs."' },
+      { t: '4 · How it is built', b: 'The architecture: stack, data flow, where state lives, rendering strategy, how it is deployed. Be ready to draw it.', d: 'For frontend, cover: rendering (CSR / SSR / static) and why, state (server data vs UI state), data fetching and caching, error handling, auth, and deployment.', ex: '"Next.js with server rendering for the public pages and a client-side dashboard. Server data through React Query, UI state in components, a REST API in Node, deployed on Vercel with preview deploys."' },
+      { t: '5 · Decisions and trade-offs', b: 'Two or three choices you made on purpose, the alternatives, and what you gave up. This is the most impressive part.', d: 'Saying what you gave up shows seniority. "We chose X" is weak; "we chose X over Y because Z, and accepted W" is strong.', ex: '"We chose React Query over Redux because 90% of our state was server data. We gave up some fine control over caching, but deleted about 40% of our state code and fixed a class of stale-data bugs."' },
+      { t: '6 · The hardest problem', b: 'A slow page, a tricky bug, a race condition, a migration: how you found the cause, what you tried, what fixed it.', d: 'Show the method: reproduce, measure (DevTools, profiler, logs), form a hypothesis, test it, fix, prevent it from coming back (a test, a lint rule, monitoring).', ex: '"The calendar froze with 500+ appointments. The React Profiler showed every cell re-rendering on each drag. I memoised the cells, moved drag state into a ref, and virtualised the list: dragging went from about 400ms per frame to under 16ms."' },
+      { t: '7 · Results, with numbers', b: 'Load time, Lighthouse score, bundle size, conversion, users, tickets, time saved. A small number beats none.', d: 'No production numbers? Measure your own project: Lighthouse before and after, bundle size, test coverage, response times.', ex: '"Double bookings dropped to almost zero, front-desk calls fell by about a third, and the dashboard\'s LCP went from 4.1s to 1.6s."' },
+      { t: '8 · Quality', b: 'Briefly: tests, accessibility, loading / empty / error states, security, monitoring. This separates professionals from tutorial-followers.', d: 'Name the kind of tests and why: unit tests for the slot logic, integration tests with Testing Library, a few end-to-end tests for booking. Mention keyboard support and error tracking (e.g. Sentry).' },
+      { t: '9 · What you would do differently', b: 'One or two honest lessons. It shows maturity, not weakness.', d: 'Pick real ones with a reason, then say what you learned.', ex: '"I would add end-to-end tests earlier: we lost about a week to regressions in the booking flow before we had them."' },
+      { t: 'Rule: two levels deep', b: 'Only mention what you can explain two levels deeper. Interviewers drill into whatever you say.', d: 'If you say "I memoised the cells", expect "when does memoisation not help?" and "how did you measure it?". Cut anything you cannot defend.' },
+      { t: 'Rule: three lengths', b: 'Prepare a 30-second, a 2-minute and a 10-minute version. Start with the 2-minute one and let the interviewer pick where to go deeper.', d: 'End the 2-minute version with an invitation: "I can go deeper into the performance work or the data layer, whichever is more useful."' },
+      { t: 'Rule: show it', b: 'Have a live demo, screenshots or the repository ready, and a simple diagram you can draw in 1 minute.', d: 'Know your own code well: many interviewers open your GitHub during the call. Re-read your key files the day before.' },
+      { t: 'Rule: personal or course project?', b: 'That is fine. Explain what you changed beyond the tutorial, why, what broke, what you measured and improved, and what you would add next.', d: 'Going beyond the course is what impresses: real data, a feature the tutorial did not have, tests, accessibility, a performance fix, deploying it publicly.' },
+      { t: 'Rule: rehearse out loud', b: 'Prepare one project fully rather than five shallowly. Say it out loud 3–4 times, ideally to a friend who asks "why?".', d: 'Record yourself once: you will notice filler words, missing numbers and parts that run too long.' },
+    ] },
     { key: 'hr', name: 'HR & behavioural', title: 'HR and behavioural rounds', say: 'These rounds reject strong engineers more often than people expect. Prepare them like technical rounds.', cards: [
       { t: '"Tell me about yourself"', b: 'About 60 seconds: present (role, skills) → past (one or two achievements) → future (why this job).', d: 'Do not recite your resume. End by connecting to the role: "…so a team building a fast, accessible checkout is exactly what I want next."',
         ex: L('I am a frontend developer with two years of React and TypeScript experience.', 'At my current company I rebuilt our analytics dashboard and cut its load time from 4 to under 2 seconds,', 'and I built a small component library that three teams now use.', 'I am looking for a product team where performance and user experience matter, which is why this role caught my eye.') },
@@ -121,7 +137,93 @@
     ] },
   ];
 
+  // ------------------------------------------------------------ "Present your project": template, example, follow-up questions
+  const PROJECT_TEMPLATE = L(
+    'PROJECT: ______________________',
+    '',
+    '1. One line:      It is a ______ used by ______ to ______ (scale: ______).',
+    '2. The problem:   Before it, ______ because ______.',
+    '3. My part:       Team of __. I owned ______; I also ______.',
+    '4. How it works:  ______ (rendering) · ______ (state / data) · ______ (API) · ______ (deploy).',
+    '5. Decisions:     We chose ______ over ______ because ______; we gave up ______.',
+    '                  (one or two more)',
+    '6. Hardest part:  ______ broke / was slow. I found the cause with ______,',
+    '                  tried ______, fixed it by ______, and prevented it with ______.',
+    '7. Results:       ______ went from ______ to ______; ______ improved by ______.',
+    '8. Quality:       Tests: ______ · Accessibility: ______ · Monitoring: ______.',
+    '9. Next time:     I would ______ because ______.',
+    '',
+    'Invitation: "I can go deeper into ______ or ______, whichever is more useful."',
+  );
+  const PROJECT_EXAMPLE = L(
+    'An example 2-minute answer (a made-up project):',
+    '',
+    '"I worked on ClinicDesk, a booking dashboard used by about 200 clinics.',
+    'Before it, clinics managed appointments in spreadsheets, so patients were',
+    'double-booked and front desks spent hours on the phone.',
+    '',
+    'We were four developers; I owned the scheduling calendar and the frontend',
+    'performance work. It is a Next.js app: server-rendered public booking pages',
+    'for SEO and speed, and a client-side dashboard. Server data goes through',
+    'React Query, which we chose over Redux because almost all our state came',
+    'from the API. We gave up some control over caching but deleted about 40%',
+    'of our state code.',
+    '',
+    'The hardest problem was the calendar freezing with 500+ appointments.',
+    'The React Profiler showed every cell re-rendering during a drag. I memoised',
+    'the cells, kept drag state in a ref and virtualised the list, so dragging',
+    'went from about 400ms per frame to under 16ms.',
+    '',
+    'Results: double bookings dropped to almost zero, front-desk calls fell by',
+    'about a third, and the dashboard\'s LCP went from 4.1 to 1.6 seconds.',
+    'We had unit tests for the slot logic and end-to-end tests for booking;',
+    'if I started again, I would add those end-to-end tests much earlier.',
+    '',
+    'I can go deeper into the performance work or the data layer, whichever',
+    'is more useful."',
+  );
+  // [question, what it tests]
+  const FOLLOW_UPS = [
+    ['Why did you choose this stack (React / Next.js / …)?', 'Reasoning, not fashion: the alternatives and why they fit less well.'],
+    ['Where does state live, and why there?', 'State design: server data vs UI state, what you would change.'],
+    ['How does data fetching and caching work? What happens if the API fails or is slow?', 'Resilience: loading, error and retry states, stale data.'],
+    ['Walk me through exactly what happens when a user clicks "Book".', 'End-to-end understanding: UI → request → server → response → re-render.'],
+    ['How did you measure performance, and what did you improve?', 'Measurement before optimisation, real metrics (LCP, INP, bundle size).'],
+    ['How does login work? Where is the token stored, and why?', 'Security: cookies vs storage, XSS and CSRF, session expiry.'],
+    ['How did you test it? What would break without the tests?', 'Testing strategy and what is worth testing.'],
+    ['What was the hardest bug, and how did you find it?', 'Debugging method, not luck.'],
+    ['If users grew 100×, what would break first?', 'Scaling thinking: rendering, data size, API limits, caching, CDN.'],
+    ['How is it deployed? How do you roll back a bad release?', 'Delivery: CI / CD, environments, monitoring.'],
+    ['How did you make it accessible?', 'Keyboard, labels, focus, contrast, testing with a screen reader.'],
+    ['What did you build yourself, and what did teammates build?', 'Honesty and ownership.'],
+    ['Tell me about a disagreement with design, backend or product on this project.', 'Collaboration: how you disagree and decide.'],
+    ['Show me the code for this part. Why is it written this way?', 'Real ownership of the code you claim.'],
+    ['What would you change if you started again?', 'Reflection and growth.'],
+  ];
+  const PROJECT_MISTAKES = [
+    'Listing features ("it has login, a cart, payments…") instead of problems, decisions and results.',
+    'Naming technologies without reasons.',
+    'No numbers at all.',
+    'Taking credit for the team\'s work, then failing the follow-up questions.',
+    'Starting with setup details (folders, installing packages) instead of the interesting part.',
+    'Saying "it was easy" or "nothing was hard": it sounds like you did not go deep.',
+    'Not knowing your own code when the interviewer opens it.',
+    'Talking for 10 minutes without checking whether the interviewer wants more.',
+  ];
+  function projectExtra() {
+    const pre = s => `<pre class="px-src">${esc(s)}</pre>`;
+    return `<p><b>Fill-in template</b> (copy it, fill it for your project, then say it out loud)</p>${pre(PROJECT_TEMPLATE)}
+      ${UI.detail ? `<p><b>A full example answer</b></p>${pre(PROJECT_EXAMPLE)}` : ''}
+      <p><b>The 15 follow-up questions interviewers ask most</b> (prepare an answer to each for your project)</p>
+      <table class="iv-diff db-words"><thead><tr><th>Question</th><th>What it tests</th></tr></thead><tbody>${FOLLOW_UPS.map(([q, w]) => `<tr><td>${esc(q)}</td><td>${esc(w)}</td></tr>`).join('')}</tbody></table>
+      <p><b>Mistakes that make a good project sound weak</b></p><ul>${PROJECT_MISTAKES.map(m => `<li>${esc(m)}</li>`).join('')}</ul>`;
+  }
+
   const SITUATIONS = [
+    { id: 'iv-project-open', title: '"Tell me about your project"', q: 'The interviewer says: "Tell me about a project you worked on."', a: 'story', choices: [['story', 'One line on what it is, the problem, your part, 2–3 decisions with trade-offs, the hardest problem, results with numbers'], ['features', 'List all its features and the technologies used'], ['setup', 'Start with how you set up the repository and installed packages']], why: 'A clear story of problem → decisions → hard problem → measurable results shows how you think and what you achieved. Feature lists and setup details tell the interviewer almost nothing about you.' },
+    { id: 'iv-project-teammate', title: 'A part a teammate built', q: 'The interviewer asks deep questions about the payment module, which a teammate built.', a: 'honest', choices: [['honest', 'Say a teammate built it, explain what you know of it and how your part connected to it'], ['bluff', 'Answer as if you built it'], ['refuse', 'Say "I don\'t know anything about that"']], why: 'Honesty about ownership builds trust, and explaining how the pieces connect still shows understanding. Bluffing usually collapses at the next question.' },
+    { id: 'iv-project-course', title: 'Only a course project', q: 'Your best project followed an online course. How do you present it?', a: 'beyond', choices: [['beyond', 'Say it started from a course, then focus on what you changed, measured and added beyond it'], ['hide', 'Present it as entirely your own idea'], ['skip', 'Avoid talking about projects']], why: 'Course projects are fine when you are honest. What you added (real data, tests, accessibility, a performance fix, deploying it) is what shows your own ability; interviewers recognise popular course projects easily.' },
+    // ------------------------------------------------------------ the rounds and the people
     { id: 'iv-unknown', title: 'You do not know the answer', q: 'The interviewer asks about a library you have never used.', a: 'honest', choices: [['honest', 'Say so honestly, then explain how you would approach it using what you do know'], ['bluff', 'Bluff confidently'], ['skip', 'Say "I don\'t know" and wait']], why: 'Honesty plus reasoning shows how you learn and think. Bluffing is easy to spot and damages trust for the rest of the interview.' },
     { id: 'iv-stuck', title: 'Stuck on a coding problem', q: 'Ten minutes into a coding problem, you are stuck.', a: 'talk', choices: [['talk', 'Say what you have tried, try a smaller example or a simpler version, and ask for a hint if needed'], ['silent', 'Keep thinking silently until you get it'], ['quit', 'Ask to skip the question']], why: 'Interviewers grade the process. Thinking aloud lets them help you; a hint used well still scores well. Silence gives them nothing to grade.' },
     { id: 'iv-clarify', title: 'An ambiguous problem', q: 'The interviewer says: "Build an autocomplete component."', a: 'ask', choices: [['ask', 'Ask about the data source, debounce, keyboard use, how many results, and loading or error states, then plan'], ['code', 'Start coding right away to save time'], ['generic', 'Build the most generic version possible']], why: 'Clarifying is part of the test: it shows you would build the right thing at work. Five minutes of questions usually saves the round.' },
@@ -179,7 +281,7 @@
     $('ghTitle').textContent = `${UI.stage + 1} · ${s.title}`;
     $('ghSay').textContent = s.say;
     const hasMore = s.cards && s.cards.some(c => c.d || c.ex);
-    $('ghBody').innerHTML = s.cards ? cardsView(s.cards) + (UI.detail || !hasMore ? '' : '<p class="cl-note">"+ Show details" adds how to do each one, with examples and phrases you can use.</p>') : quizView();
+    $('ghBody').innerHTML = s.cards ? cardsView(s.cards) + (UI.detail || !hasMore ? '' : '<p class="cl-note">"+ Show details" adds how to do each one, with examples and phrases you can use.</p>') + (s.extra ? s.extra() : '') : quizView();
     $('ghDetail').textContent = UI.detail ? '− Brief view' : '+ Show details';
     $('ghDetail').classList.toggle('hidden', !hasMore);
     $('ghPrev').disabled = UI.stage === 0;

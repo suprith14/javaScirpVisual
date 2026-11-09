@@ -86,10 +86,10 @@
   ];
   // rough yearly pay abroad for a mid-level frontend engineer (before tax)
   const ABROAD = [
-    ['USA', '$120k–200k base; big tech total (with stock) often $200k–350k', 'H-1B visa is a lottery; L-1 transfer after a year with a company is another route'],
+    ['USA', '$120k–200k base; big tech total (with stock) often $200k–350k', 'The H-1B visa is a lottery, and since September 2025 most new H-1B petitions carry a $100,000 employer fee (under legal challenge), so fewer companies sponsor; an L-1 transfer after a year with the same company is another route'],
     ['UK (London)', '£50k–85k', 'Skilled Worker visa; higher cost of living'],
     ['Germany', '€55k–80k', 'EU Blue Card; Berlin and Munich have the most jobs'],
-    ['Netherlands', '€50k–80k', 'Highly Skilled Migrant visa; 30% tax ruling for some newcomers'],
+    ['Netherlands', '€50k–80k', 'Highly Skilled Migrant visa; a tax break for skilled newcomers (the "30% ruling", becoming 27% from 2027)'],
     ['Ireland (Dublin)', '€55k–85k', 'Many big-tech EU offices; Critical Skills permit'],
     ['UAE (Dubai)', 'AED 18k–35k a month, no income tax', 'Employer sponsors the visa; check housing and school costs'],
     ['Singapore', 'SGD 70k–130k', 'Employment Pass with a minimum salary; very competitive'],

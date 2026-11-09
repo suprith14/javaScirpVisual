@@ -1,0 +1,974 @@
+<!DOCTYPE html>
+<html lang="en"><head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>JS Engine Lab — Interface tests</title>
+  <style>
+    :root { --bg: #0b0e1f; --panel: #161b36; --line: #2b3264; --text: #e8ebff; --muted: #8e96c8; --ok: #3ee6a8; --bad: #ff5d73; }
+    @media (prefers-color-scheme: light) { :root:not([data-theme="dark"]) { --bg: #f4f6fc; --panel: #fff; --line: #d6dbec; --text: #1b1f36; --muted: #5d6488; --ok: #0a8a5b; --bad: #c8243d; } }
+    body { margin: 0; background: var(--bg); color: var(--text); font: 14px/1.5 system-ui, sans-serif; padding: 16px; }
+    h1 { font-size: 20px; margin: 0 0 4px; } p { color: var(--muted); margin: 0 0 12px; }
+    .sum { font-size: 16px; font-weight: 700; margin: 10px 0; }
+    .row { font-family: Consolas, monospace; font-size: 12.5px; padding: 2px 0; border-bottom: 1px dashed var(--line); }
+    .ok { color: var(--ok); } .bad { color: var(--bad); }
+    pre { white-space: pre-wrap; margin: 2px 0 6px 18px; color: var(--muted); font-size: 12px; }
+    iframe { width: 1280px; height: 900px; border: 1px solid var(--line); border-radius: 8px; margin-top: 12px; max-width: 100%; }
+  </style>
+</head>
+<body>
+  <h1>🧪 Interface tests</h1>
+  <p>Opens the real app in the frame below and clicks through menus, practice modes and tools. Run it over a local web server (for example <code>npx serve</code>); browsers block access to a <code>file://</code> frame.</p>
+  <div class="sum" id="sum">Running…</div>
+  <div id="out"></div>
+  <iframe id="app" title="App under test"></iframe>
+  <script>
+  (async function () {
+    'use strict';
+    const frame = document.getElementById('app'), out = document.getElementById('out');
+    let pass = 0, fail = 0;
+    const row = (ok, label, detail) => {
+      ok ? pass++ : fail++;
+      const d = document.createElement('div');
+      d.className = 'row ' + (ok ? 'ok' : 'bad');
+      d.textContent = (ok ? '✔ ' : '✘ ') + label;
+      out.appendChild(d);
+      if (!ok && detail) { const p = document.createElement('pre'); p.textContent = detail; out.appendChild(p); }
+    };
+    const sleep = ms => new Promise(r => setTimeout(r, ms));
+    const load = params => new Promise(resolve => { frame.onload = () => setTimeout(resolve, 900); frame.src = 'index.html?' + params; });
+    const D = () => frame.contentDocument;
+    const $ = id => D().getElementById(id);
+    const q = sel => D().querySelector(sel);
+    const click = el => { if (typeof el === 'string') el = $(el) || q(el); el.click(); };
+    const key = k => D().dispatchEvent(new KeyboardEvent('keydown', { key: k, bubbles: true }));
+    const check = async (label, fn) => {
+      try { const r = await fn(); row(r === true || r === undefined, label, r === true || r === undefined ? null : String(r)); }
+      catch (e) { row(false, label, e && e.stack || String(e)); }
+    };
+    const seek = step => { const s = $('scrub'); s.value = step - 1; s.dispatchEvent(new Event('input', { bubbles: true })); };
+
+    // keep the first-visit tour and picker out of the way, but start from a clean slate
+    try { frame.contentWindow.localStorage.clear(); } catch (e) { /* not loaded yet */ }
+
+    await load('level=2&theme=dark');
+    // IntersectionObserver only reports on rendering frames, and headless Chrome in this test mode stops making
+    // frames after a while, so these tasks are checked first, on the freshly loaded page.
+    await check('Web lab: the IntersectionObserver tasks give the intended answer (measured on a fresh page)', async () => {
+      const w = frame.contentWindow, L = w.WebLab, want = { 'api-io-first': '20', 'api-io-visible': '12' }, bad = [];
+      for (const t of w.WEB_TASKS.filter(x => x.needsView)) {
+        // headless Chrome sometimes renders no frame for a frame that has finished loading; reloading the task gives it another
+        let got = null;
+        for (let attempt = 0; attempt < 6 && got !== want[t.id]; attempt++) {
+          L.close(); await sleep(50); L.open(t.id);
+          for (let i = 0; i < 60 && L.expected() == null; i++) await sleep(100);
+          got = L.expected();
+        }
+        if (got !== want[t.id]) bad.push(`${t.id}: got ${got}, intended ${want[t.id]}`);
+      }
+      L.close();
+      return !bad.length || bad.join('; ');
+    });
+    await check('app starts and builds a trace',() => /^Step 1 \/ \d+/.test($('stepCount').textContent) || $('stepCount').textContent);
+    await check('stepping forward moves to step 2', () => { click('btnNext'); return /^Step 2 \//.test($('stepCount').textContent) || $('stepCount').textContent; });
+    await check('timeline click jumps to a later step', () => {
+      const cv = $('timeline'), r = cv.getBoundingClientRect();
+      cv.dispatchEvent(new MouseEvent('click', { clientX: r.left + r.width * 0.8, clientY: r.top + 5, bubbles: true }));
+      const n = +/Step (\d+)/.exec($('stepCount').textContent)[1];
+      return n > 10 || $('stepCount').textContent;
+    });
+    await check('View menu presets: Minimal hides the evaluation box', () => {
+      click('btnView');
+      if ($('viewMenu').classList.contains('hidden')) return 'menu did not open';
+      click(q('[data-preset="minimal"]'));
+      return $('viewName').textContent === 'Minimal' || $('viewName').textContent;
+    });
+    await check('View menu presets: Full detail', () => { click(q('[data-preset="full"]')); return $('viewName').textContent === 'Full detail' || $('viewName').textContent; });
+    await check('keyboard shortcut X toggles expression evaluation (Custom view)', () => { click('btnView'); key('x'); return $('viewName').textContent === 'Custom' || $('viewName').textContent; });
+    await check('shortcut list opens with ?', () => { key('?'); return !$('keysModal').classList.contains('hidden'); });
+    key('Escape');
+
+    await load('interview=bubblesort&theme=dark');
+    await check('interview question loads', () => /Bubble sort/.test($('levelTitle').textContent) || $('levelTitle').textContent);
+    await check('array view shows bars, pointers and a written cell', () => { seek(22); return (!!q('.arrview.bars .ac.wr') && !!q('.arrview .ap')) || 'no highlighted write / pointer'; });
+    await check('evaluation tree is shown for the current line', () => {
+      click('btnView'); click(q('[data-preset="beginner"]')); seek(22);
+      return (!$('evalbox').classList.contains('hidden') && !!q('.et-tree li')) || 'evaluation box hidden';
+    });
+    await check('conditions show ✓ true / ✗ false inline', () => !!Array.from(D().querySelectorAll('.inl')).find(x => /^[✓✗]/.test(x.textContent)) || 'no condition badge');
+
+    await load('interview=fibonacci&theme=dark');
+    await check('call tree appears for recursion', () => { seek(60); return (!!q('.calltree svg') && !!q('.ct-n.cur')) || 'no call tree'; });
+
+    await load('interview=interleave&theme=dark');
+    await check('predict mode: a correct prediction is accepted', () => {
+      click('btnLesson');
+      $('ivGuess').value = '1\n3\n2\n4';
+      click('ivCheck');
+      return !!q('.iv-verdict.ok') || ($('ivResult').textContent || 'no verdict');
+    });
+    await check('predict mode: a wrong prediction shows a line-by-line diff', () => {
+      $('ivGuess').value = '1\n2\n3\n4';
+      click('ivCheck');
+      return (!!q('.iv-verdict.bad') && D().querySelectorAll('.iv-diff tr.bad').length === 2) || 'diff not shown';
+    });
+    key('Escape');
+
+    await load('interview=debounce&theme=dark');
+    await check('write it yourself: starter has empty function bodies', async () => {
+      click('btnLesson');
+      click('ivWrite');
+      await sleep(300);
+      const code = frame.contentWindow.document.querySelector('.CodeMirror') ? frame.contentWindow.document.querySelector('.CodeMirror').CodeMirror.getValue() : $('editor').value;
+      return (D().body.classList.contains('challenge-mode') && /your code here/.test(code)) || 'not in write-it mode';
+    });
+    await check('write it yourself: the empty starter fails with a mistake hint', () => {
+      click('btnCheck');
+      return (!!q('.tres.bad') && !!q('.tres.tips')) || 'no failure / tips';
+    });
+    await check('write it yourself: the reference solution passes', async () => {
+      click('btnSolution');
+      click('useSolution');
+      await sleep(200);
+      click('btnCheck');
+      return !!q('.tres.win') || $('taskResults').textContent;
+    });
+
+    await load('level=2&theme=dark&interview=list');
+    await check('interview menu: search filters the list', async () => {
+      await sleep(400);
+      const s = $('ivSearch');
+      s.value = 'debounce';
+      s.dispatchEvent(new Event('input', { bubbles: true }));
+      const items = D().querySelectorAll('.iv-item');
+      return (items.length >= 1 && items.length < 10) || `got ${items.length} items`;
+    });
+    await check('mock interview starts and ends with a scorecard', async () => {
+      click('ivMock');
+      await sleep(600);
+      if ($('mockBar').classList.contains('hidden')) return 'mock bar not shown';
+      key('Escape');
+      click('mbEnd');
+      return /Mock interview result/.test($('briefTitle').textContent) || $('briefTitle').textContent;
+    });
+    key('Escape');
+
+    await load('level=2&theme=dark');
+    await check('compare runs both versions', () => {
+      click('btnCompare');
+      $('cmpB').value = $('cmpA').value.replace('printSquare(4)', 'printSquare(5)');
+      click('cmpRun');
+      return (!!q('#cmpOut .cmp-table tr.diff')) || $('cmpOut').textContent;
+    });
+    key('Escape');
+    await check('Big-O lab measures a preset (linear search → O(n))', () => {
+      click('btnLab');
+      click('labRun');
+      return /O\(n\)/.test($('labTable').textContent) || $('labTable').textContent || $('labNote').textContent;
+    });
+    key('Escape');
+    await check('export progress creates a download', () => {
+      const w = frame.contentWindow;
+      let made = false;
+      const orig = w.URL.createObjectURL;
+      w.URL.createObjectURL = () => { made = true; return 'blob:test'; };
+      click('btnProgress');
+      click('btnExport');
+      w.URL.createObjectURL = orig;
+      return made || 'no file was created';
+    });
+    key('Escape');
+
+    await load('level=2&theme=dark');
+    await check('practice: one header button, a list of every hands-on task (no theory), opening straight into the task', async () => {
+      const w = frame.contentWindow, P = w.JSPractice;
+      if (!$('btnPractice')) return 'no Practice button';
+      const hiddenMenus = ['btnInterview', 'btnLevels', 'btnChallenges', 'btnProgress'].every(id => getComputedStyle($(id)).display === 'none');
+      const list = P.list();
+      const codeQs = w.JS_INTERVIEW.filter(x => x.kind !== 'theory').length;
+      const all = list.length === codeQs + w.JS_CHALLENGES.length + (w.CSS_TASKS || []).length + (w.WEB_TASKS || []).length + (w.TS_TASKS || []).length + (w.TEST_TASKS || []).length + (w.PROJECTS || []).length && !list.some(t => w.JS_INTERVIEW.find(x => x.id === t.id && x.kind === 'theory'));
+      click('btnPractice');
+      await sleep(200);
+      const items = D().querySelectorAll('#practiceList .pl-item').length;
+      const k = list.findIndex(t => t.kind === 'predict');
+      click(D().querySelectorAll('#practiceList .pl-item')[k]);
+      await sleep(900);
+      const predictBox = !!$('ivGuess') && !$('briefModal').classList.contains('hidden');
+      const pillOk = !!$('practicePill') && new RegExp('Task ' + (k + 1) + ' /').test($('practicePill').textContent);
+      key('Escape'); click(q('#briefModal [data-close]') || q('#briefModal .close'));
+      return (hiddenMenus && all && items === list.length && predictBox && pillOk) || `menus hidden ${hiddenMenus}, all ${all} (${list.length}), items ${items}, predict box ${predictBox}, pill ${pillOk}`;
+    });
+    await check('practice: ▶ goes to the next task; a challenge opens in the editor; "need a hint?" opens the lesson', async () => {
+      const w = frame.contentWindow, P = w.JSPractice, list = P.list();
+      const c = list.findIndex(t => t.kind === 'build');
+      P.open(c);
+      await sleep(900);
+      const inChallenge = D().body.classList.contains('challenge-mode') && w.JSLabAPI.currentKey() === list[c].key;
+      click('ppNext');
+      await sleep(900);
+      const moved = w.JSLabAPI.currentKey() === list[c + 1].key;
+      w.JSLabAPI.closeModals();
+      const hint = $('ppHint');
+      if (hint) click(hint);
+      await sleep(200);
+      const lessonOpen = !hint || !$('briefModal').classList.contains('hidden');
+      key('Escape');
+      return (inChallenge && moved && lessonOpen) || `challenge ${inChallenge}, next ${moved}, hint lesson ${lessonOpen}`;
+    });
+
+    await check('practice: an under-the-hood write-it task opens with empty bodies; a memory task switches the garbage view on', async () => {
+      const w = frame.contentWindow, P = w.JSPractice, list = P.list();
+      const ws = list.findIndex(t => t.id === 'w-marksweep');
+      if (ws < 0 || list[ws].kind !== 'write') return 'w-marksweep is not a write task';
+      P.open(ws);
+      await sleep(900);
+      const code = D().querySelector('.CodeMirror') ? D().querySelector('.CodeMirror').CodeMirror.getValue() : $('editor').value;
+      const blank = /function markAndSweep\(heap, roots\) \{\s*\/\/[^\n]*\n\s*\}/.test(code) || !/marked\.add/.test(code);
+      w.localStorage.setItem('jsl.gcView', 'false');
+      const gc = list.findIndex(t => t.id === 'gc-reachable');
+      P.open(gc);
+      await sleep(900);
+      const on = w.document.querySelector('#viewOpts [data-view="gcView"]');
+      const gcOn = on ? on.checked : null;
+      w.JSLabAPI.closeModals();
+      return (blank && gcOn) || `starter blank ${blank}, garbage view on ${gcOn}`;
+    });
+
+    await check('CSS lab: every task\'s measured answer matches its explanation (real browser layout)', async () => {
+      const w = frame.contentWindow, L = w.CSSLab;
+      const want = {
+        'css-specificity': 'rgb(255, 0, 0)', 'css-order': 'rgb(255, 255, 0)', 'css-important': 'rgb(0, 128, 0)', 'css-descendant': 'rgb(255, 165, 0)',
+        'css-inherit': 0, 'css-em': 45, 'css-rem': 24, 'css-contentbox': 124, 'css-borderbox': 100, 'css-collapse': 30, 'css-percent-padding': 30,
+        'css-inline-width': 'no, only as wide as its text', 'css-absolute': 30, 'css-zindex-static': 'B', 'css-stacking-context': 'the header',
+        'css-flex-grow': 250, 'css-flex-shrink': 225, 'css-justify': 150, 'css-stretch': 100, 'css-grid-fr': 200, 'css-grid-span': 210, 'css-autofill': 3,
+        'css-media': 'rgb(255, 0, 0)', 'css-vw': 200, 'html-tab': 3, 'html-label': 'the email input',
+        'css-container': 'only the main-column card', 'css-has': 'rgb(255, 0, 0)', 'css-layer': 'rgb(255, 0, 0)', 'css-clamp': 20, 'css-transform': 0,
+        'a11y-dialog': 'the Cancel button', 'a11y-aria-hidden': 'yes', 'a11y-inert': 'no',
+        'css-logical': 'right',
+      };
+      const bad = [];
+      for (const t of w.CSS_TASKS) {
+        L.open(t.id);
+        await sleep(400);
+        const got = L.expected(), exp = want[t.id];
+        const ok = typeof exp === 'number' ? Math.abs(got - exp) <= 1 : got === exp;
+        if (!ok) bad.push(`${t.id}: browser ${got}, explanation ${exp}`);
+      }
+      // a check, the cascade table and the box model
+      L.open('css-specificity'); await sleep(400);
+      L.check('red'); await sleep(100);
+      const right = !!q('#csResult .iv-verdict.ok') && D().querySelectorAll('#csWhy .cl-cascade tr').length === 4 && /#intro/.test(q('#csWhy .cl-cascade tr.win').textContent);
+      L.open('css-contentbox'); await sleep(400);
+      L.check('100'); await sleep(100);
+      const wrong = !!q('#csResult .iv-verdict.bad') && !!q('#csWhy .bm-c');
+      L.close();
+      const inList = w.JSPractice.list().filter(x => x.kind === 'css').length === w.CSS_TASKS.length;
+      return (!bad.length && right && wrong && inList) || `${bad.join('; ')} | right ${right}, wrong+box ${wrong}, in list ${inList}`;
+    });
+
+    await check('Web lab: every network / security / performance task gives the intended answer (XSS, CSP and layout shift really run)', async () => {
+      const w = frame.contentWindow, L = w.WebLab;
+      const want = {
+        'net-cors-public': 'read', 'net-cors-missing': 'blocked', 'net-cors-json': 'preflight', 'net-cors-credentials': 'blocked', 'net-cors-port': 'blocked',
+        'net-cache-fresh': 'cache', 'net-cache-nocache': '304', 'net-cache-stale': 'download', 'net-cache-hashed': 'cache',
+        'sec-cookie-httponly': 'no', 'sec-csrf-lax': 'no', 'sec-lax-link': 'yes', 'sec-samesite-none': 'yes', 'sec-cookie-path': 'no',
+        'sec-xss-img': 'runs', 'sec-xss-text': 'safe', 'sec-csp': 'safe',
+        'perf-script-order': 'a.js, d.js, c.js, b.js', 'perf-css-blocks': 'yes', 'perf-cls': 'jumps', 'perf-cls-fixed': 'stays',
+        'git-ff': 'C → B → A', 'git-merge': 'Merge feature → C → B → A', 'git-rebase': "B' → C → A", 'git-reset': 'B → A', 'git-revert': 'Revert C → C → B → A',
+        'git-detached': 'no', 'git-cherry': "Fix' → C → A", 'npm-caret': 'yes', 'npm-major': 'no', 'npm-tilde': 'no', 'npm-zero': 'no',
+        'render-csr-seo': 'no', 'render-ssr-seo': 'yes', 'render-csr-first': '770ms', 'render-ssr-click': 'no', 'render-ssg-price': 'old', 'render-isr-price': 'old', 'render-hydration': 'mismatch',
+        'render-pick-docs': 'ssg', 'render-pick-dashboard': 'csr', 'render-pick-shop': 'isr', 'sw-cache-first': 'v1', 'sw-network-first': 'v2', 'sw-swr': 'v2', 'sw-offline-nocache': 'error',
+        'api-io-first': '20', 'api-io-visible': '12', 'api-storage-string': 'object', 'api-storage-event': 'no', 'api-history': 'no',
+        'auth-jwt-read': 'yes', 'auth-token-xss': 'yes', 'auth-refresh': '3', 'auth-refresh-race': '6', 'auth-oauth': 'a', 'intl-price': 'de', 'intl-date': '04/03/2026', 'intl-timezone': 'Jan 4',
+        'live-poll': '15.1s', 'live-ws': '12.1s', 'live-reconnect': 'lost', 'live-pick': 'sse',
+        'ex-mul': '7', 'ex-pow': '512', 'ex-minus-str': '"31"', 'ex-compare-chain': 'false', 'ex-or-chain': 'null', 'ex-nullish': '0', 'ex-and-or': '"big"', 'ex-optional': 'undefined', 'ex-plus-obj': '"[object Object]"', 'ex-typeof': '"string"', 'ex-mix-error': 'SyntaxError', 'ex-neg-pow': 'SyntaxError',
+        'tp-add-month': '2026-02-28', 'tp-immutable': '2026-05-10', 'tp-month': '3', 'tp-until': 'P59D', 'tp-dst': '2026-03-08T03:30:00-04:00[America/New_York]', 'tp-invalid': 'RangeError', 'tp-equals': 'false, true', 'tp-sort': '2026-02-15, 2026-09-30, 2026-12-01',
+        'ns-pull': '3', 'ns-transform': '2 chunks: HELLO STREAM', 'ns-uuid': '36 chars, version 4', 'ns-sha': '64 hex chars, starts ba7816bf',
+      };
+      const bad = [];
+      for (const t of w.WEB_TASKS) {
+        if (t.needsView) continue; // observer tasks: checked on a fresh page in the next test
+        L.open(t.id);
+        await sleep(t.kind === 'measure' ? 900 : 50);
+        const got = L.expected();
+        const exp = ['db', 'deploy', 'team', 'corp', 'term', 'ivs', 'roles', 'aiwork', 'tax', 'oss', 'nodex', 'earn', 'freelance', 'design', 'current', 'health', 'business'].includes(t.solver) ? t.scenario.a : want[t.id];
+        if (got !== exp) bad.push(`${t.id}: got ${got}, intended ${exp}`);
+        if (!t.choices.includes(got)) bad.push(`${t.id}: answer ${got} is not one of the choices`);
+      }
+      L.open('net-cors-json'); await sleep(50);
+      click(q('#webLab [data-wbchoice="read"]')); await sleep(50);
+      const steps = D().querySelectorAll('#wbWhy .wl-steps li').length >= 4 && !!q('#wbResult .iv-verdict.bad');
+      L.open('perf-script-order'); await sleep(50);
+      L.check('a.js, d.js, c.js, b.js'); await sleep(50);
+      const fall = D().querySelectorAll('#wbWhy .wl-row').length >= 5 && !!q('#wbResult .iv-verdict.ok');
+      L.close();
+      const inList = w.JSPractice.list().filter(x => x.kind === 'web').length === w.WEB_TASKS.length;
+      return (!bad.length && steps && fall && inList) || `${bad.join('; ')} | steps ${steps}, waterfall ${fall}, in list ${inList}`;
+    });
+
+    await check('Test lab: every model answer passes on the correct code and catches every bug; every starter misses at least one', async () => {
+      const w = frame.contentWindow, L = w.TestLab, bad = [];
+      for (const t of w.TEST_TASKS) {
+        const good = await L.runAll(t, t.solution);
+        if (good.correct.error || !good.correct.results.length || good.correct.results.some(x => !x.pass)) bad.push(`${t.id}: model answer fails on the correct code (${good.correct.error || (good.correct.results.find(x => !x.pass) || {}).msg})`);
+        good.bugs.forEach((b, i) => { if (b.error) bad.push(`${t.id} bug ${i + 1}: ${b.error}`); else if (!b.caught) bad.push(`${t.id}: model answer misses bug ${i + 1}`); });
+        const start = await L.runAll(t, t.starter);
+        if (start.correct.results.some(x => !x.pass)) bad.push(`${t.id}: starter fails on the correct code`);
+        if (start.bugs.every(b => b.caught)) bad.push(`${t.id}: starter already catches every bug`);
+      }
+      L.open('t-sumeven'); await sleep(100);
+      L.setTests(w.TEST_TASKS[0].solution); click('tlRun'); await sleep(1500);
+      const shown = !!q('#tlResult .iv-verdict.ok') && !!q('#tlResult .tl-matrix');
+      L.close();
+      const inList = w.JSPractice.list().filter(x => x.kind === 'test').length === w.TEST_TASKS.length;
+      return (!bad.length && shown && inList) || `${bad.join('; ')} | result shown ${shown}, in list ${inList}`;
+    });
+
+    await check('🖥️ Code → Pixels: every stage draws; DOM, render tree, layout and layers are right; a JS change re-runs the right stages', async () => {
+      const w = frame.contentWindow, X = w.PixelsLab, bad = [];
+      click('btnPixels'); await sleep(900);
+      if ($('pixelsLab').classList.contains('hidden')) return 'the tab did not open';
+      const M = X.model(), L = X.live();
+      if (!L) return 'the page was not measured';
+      if (M.tokens.length < 20 || M.reveal[M.reveal.length - 1] !== M.nodes.length) bad.push(`tokens ${M.tokens.length}, revealed ${M.reveal[M.reveal.length - 1]} of ${M.nodes.length} DOM nodes`);
+      if (X.stages().length !== 9 || X.stages().some(s => s.key === 'react')) bad.push('a plain page should have 9 steps without React');
+      for (let i = 0; i < X.stages().length; i++) { X.go(i); await sleep(60); if (!q('#pxBody').innerHTML.trim()) bad.push('stage ' + (i + 1) + ' is empty'); }
+      X.go(3); await sleep(60);
+      const render = q('#pxBody').textContent;
+      if (!/p\.hidden.*display: none/.test(render) || !/::before "\$"/.test(render)) bad.push('render tree misses display:none or ::before');
+      X.go(4); await sleep(60);
+      if (D().querySelectorAll('#pxOverlay .px-b').length < 6) bad.push('layout draws ' + D().querySelectorAll('#pxOverlay .px-b').length + ' boxes');
+      X.go(5); await sleep(60);
+      if (D().querySelectorAll('#pxOverlay .px-p').length < 5) bad.push('paint draws too little');
+      // a click in the page: width change → layout
+      X.go(8); await sleep(60);
+      X.frame().contentDocument.getElementById('buy').click(); await sleep(400);
+      if (!X.log()[0] || X.log()[0].kind !== 'layout' || !/width/.test(q('#pxBody').textContent)) bad.push('card click: ' + (X.log()[0] && X.log()[0].kind));
+      // the three kinds of change
+      X.open('changes'); await sleep(900); X.go(8); await sleep(60);
+      const kinds = {};
+      for (const id of ['color', 'size', 'move']) { X.frame().contentDocument.getElementById(id).click(); await sleep(400); kinds[id] = X.log()[0] && X.log()[0].kind + '/' + X.log()[0].moved; }
+      if (kinds.color !== 'paint/0' || !/^layout\/[1-9]/.test(kinds.size) || kinds.move !== 'composite/0') bad.push('kinds ' + JSON.stringify(kinds));
+      if (!q('.px-f.on.composite') || q('.px-f.on.layout')) bad.push('frame bar for transform');
+      // layers and the script example
+      X.open('layers'); await sleep(900);
+      const names = X.live().layers.map(l => l.name).join(' | ');
+      if (!/header/.test(names) || !/badge/.test(names) || !/spinner/.test(names) || /tip/.test(names)) bad.push('layers: ' + names);
+      X.open('script'); await sleep(900);
+      if (!/saw 1 paragraph/.test(X.frame().contentDocument.body.textContent)) bad.push('the inline script did not see only the paragraph above it');
+      X.go(1); await sleep(60);
+      if (!/parser <b>stops<\/b>|parser stops/.test(q('#pxBody').innerHTML)) bad.push('no parser-pause note');
+      // layout thrashing: the read/write loop forces layout on (almost) every read; the batched version never does
+      X.open('thrash'); await sleep(900); X.go(8); await sleep(60);
+      X.frame().contentDocument.getElementById('bad').click(); await sleep(500);
+      const badRun = X.log()[0];
+      X.frame().contentDocument.getElementById('good').click(); await sleep(500);
+      const goodRun = X.log()[0];
+      if (!badRun || badRun.forced < 290 || !goodRun || goodRun.forced !== 0 || goodRun.reads < 300 || !q('.px-verdict.ok')) bad.push(`thrash: bad forced ${badRun && badRun.forced}, good forced ${goodRun && goodRun.forced} reads ${goodRun && goodRun.reads}`);
+      X.go(8); await sleep(30);
+      X.frame().contentDocument.getElementById('bad').click(); await sleep(500);
+      if (!q('.px-f.on.forced') || !q('.px-verdict.thrash')) bad.push('no thrashing warning shown');
+      // React: an extra step, the element tree, and setState → the smallest DOM change
+      X.open('react'); await sleep(900);
+      const keys = X.stages().map(s => s.key).join();
+      if (X.stages().length !== 10 || !/dom,react,css/.test(keys)) bad.push('react steps: ' + keys);
+      X.go(2); await sleep(60);
+      if (!/createElement/.test(q('#pxBody').textContent) || !/create the whole tree: 4 elements/.test(q('#pxBody').textContent) || !/type: "button", onClick: ƒ/.test(q('#pxBody').textContent)) bad.push('react step content');
+      X.go(9); await sleep(60);
+      const add = () => X.frame().contentDocument.querySelector('button');
+      add().click(); await sleep(400);
+      const r1 = X.log()[0];
+      if (!r1 || !r1.react || r1.react.renders.join() !== 'App' || r1.react.ops.join() !== 'set text "1"' || !q('.px-f.on.react')) bad.push('react update 1: ' + JSON.stringify(r1 && r1.react));
+      add().click(); await sleep(400); add().click(); await sleep(400);
+      const r3 = X.log()[0];
+      if (!r3 || !r3.react || !r3.react.ops.some(o => /set class="warn" on <p>/.test(o)) || !r3.changes.some(c => c.prop === 'color')) bad.push('react update 3: ' + JSON.stringify(r3 && r3.react));
+      X.close();
+      return !bad.length || bad.join('; ');
+    });
+
+    await check('📊 Performance: Lighthouse scoring math, the p75 real-user model, and the tab measures and compares runs', async () => {
+      const w = frame.contentWindow, P = w.PerfLab, bad = [];
+      const M = k => P.metrics.find(m => m.key === k);
+      // the curve: p10 scores 90, the median scores 50, much worse scores near 0
+      if (Math.round(P.curve(M('lcp'), 2500) * 100) !== 90 || Math.round(P.curve(M('lcp'), 4000) * 100) !== 50 || P.curve(M('tbt'), 3000) > 0.05) bad.push('curve');
+      const atP10 = P.score({ fcp: 1800, si: 3387, lcp: 2500, tbt: 200, cls: 0.1 }).total;
+      const fast = P.score({ fcp: 800, si: 1200, lcp: 1200, tbt: 0, cls: 0 }).total;
+      const slowTbt = P.score({ fcp: 800, si: 1200, lcp: 1200, tbt: 600, cls: 0 }).total; // TBT at its median: 30% weight × 0.5
+      if (atP10 !== 90 || fast < 98 || slowTbt !== 85) bad.push(`scores ${atP10} / ${fast} / ${slowTbt}`);
+      // phone mode: CPU ×4 for long tasks and rendering, network ×3 plus set-up for downloads
+      const rawBad = { fcp: 100, lcp: 1500, lcpEl: 'img#hero', imgDelay: 1400, cls: 0.3, long: [350], inp: 250 };
+      const rawFixed = { fcp: 100, lcp: 350, lcpEl: 'img#hero', imgDelay: 250, cls: 0, long: [], inp: 30 };
+      const pb = P.values(rawBad, 'phone'), cb = P.values(rawBad, 'computer'), pf = P.values(rawFixed, 'phone');
+      if (pb.fcp !== 1000 || pb.lcp !== 5200 || pb.tbt !== 1350 || cb.tbt !== 300 || pb.inp !== 1000 || pf.lcp !== 1750 || pf.tbt !== 0) bad.push('phone estimate ' + JSON.stringify(pb) + JSON.stringify(pf));
+      const sPhone = P.score(pb).total, sDesk = P.score(cb).total, sFixed = P.score(pf).total;
+      if (!(sDesk - sPhone > 20) || sFixed < 90) bad.push(`phone ${sPhone} / desktop ${sDesk} / fixed on phone ${sFixed}`);
+      const good = P.field({ lcp: 400, inp: 40, cls: 0 }, 7), poor = P.field({ lcp: 1550, inp: 280, cls: 0.4 }, 7);
+      if (!good.every(f => f.p75 <= f.c.good) || poor.every(f => f.p75 <= f.c.good) || Math.abs(good[0].good + good[0].ni + good[0].poor - 100) > 0.01) bad.push('field model');
+      click('btnPerf'); await sleep(200);
+      if ($('perfLab').classList.contains('hidden')) return 'the tab did not open';
+      for (let i = 0; i < 60 && !(P.run() && P.run().done); i++) await sleep(100);
+      if (!P.run() || !P.run().done) return 'the measurement never finished';
+      if (!/CLS/.test(q('#pfBody').textContent) || !/TBT/.test(q('#pfBody').textContent)) bad.push('measure view');
+      P.go(1); await sleep(50);
+      if (D().querySelectorAll('#pfBody .pf-curve').length !== 5 || !q('#pfBody .pf-ring')) bad.push('score view');
+      const shown = el => w.getComputedStyle(el).display !== 'none';
+      if (!$('perfLab').classList.contains('is-brief') || shown(q('#pfBody .pf-curve').closest('td'))) bad.push('the score should be brief by default');
+      click('pfDetail'); await sleep(50);
+      if (!shown(q('#pfBody .pf-curve').closest('td'))) bad.push('details do not show the curves');
+      click('pfDetail'); await sleep(50);
+      P.go(2); await sleep(50);
+      if (D().querySelectorAll('#pfBody .pf-hist').length !== 3 || !/Core Web Vitals/.test(q('#pfBody').textContent)) bad.push('field view');
+      P.setFix('sized', true); P.setFix('smallImg', true);
+      for (let i = 0; i < 60 && !(P.run() && P.run().done); i++) await sleep(100);
+      P.go(3); await sleep(50);
+      if (P.runs().length < 2 || D().querySelectorAll('#pfBody .pf-table tbody tr').length < 2 || !/Optimised hero image/.test(q('#pfBody').textContent)) bad.push('fix runs ' + P.runs().length);
+      P.go(4); await sleep(50);
+      if (!/web-vitals/.test(q('#pfBody').textContent) || !/minScore/.test(q('#pfBody').textContent)) bad.push('track view');
+      P.close();
+      return !bad.length || bad.join('; ');
+    });
+
+    await check('🗄️ Databases: the types, the "which one?" answers, the app diagram, and the Map link', async () => {
+      const w = frame.contentWindow, L = w.DatabaseLab, bad = [];
+      click('btnDb'); await sleep(150);
+      if ($('dbLab').classList.contains('hidden')) return 'the tab did not open';
+      if (D().querySelectorAll('#dbBody .db-card').length !== 10) bad.push('types ' + D().querySelectorAll('#dbBody .db-card').length);
+      const seen = el => w.getComputedStyle(el).display !== 'none';
+      if (seen(q('#dbBody .db-card pre'))) bad.push('types should be brief by default');
+      click('dbDetail'); await sleep(50);
+      if (!seen(q('#dbBody .db-card pre'))) bad.push('details do not show the data examples');
+      click('dbDetail'); await sleep(50);
+      if (!L.questions.every(x => L.types.some(t => t.id === x.a))) bad.push('an answer is not a type');
+      const inList = w.JSPractice.list().filter(x => x.topic === 'Databases');
+      if (inList.length !== 11 || inList.some(x => x.icon !== '🗄️')) bad.push('practice list has ' + inList.length + ' database tasks');
+      L.goKey('quiz'); await sleep(50);
+      click(q('[data-dbq="0"][data-dba="document"]')); await sleep(50);
+      click(q('[data-dbq="1"][data-dba="search"]')); await sleep(50);
+      if (!q('.db-q.no') || !q('.db-q.ok') || !/Best fit: Relational/.test(q('.db-q.no').textContent)) bad.push('quiz feedback');
+      L.goKey('app'); await sleep(50);
+      if (D().querySelectorAll('#dbBody .db-box').length < 7 || D().querySelectorAll('#dbBody .db-flow li').length !== 5) bad.push('app diagram');
+      L.close();
+      click('btnMap'); await sleep(150);
+      click(q('#frontendMap [data-fmdb]')); await sleep(150);
+      if ($('dbLab').classList.contains('hidden') || !$('frontendMap').classList.contains('hidden')) bad.push('map link');
+      L.close();
+      return !bad.length || bad.join('; ');
+    });
+
+    await check('top bar: the 📚 Topics menu opens, lists the five tabs, opens one and closes', async () => {
+      const w = frame.contentWindow, menu = $('topicsMenu');
+      click('btnTopics'); await sleep(50);
+      const opened = !menu.classList.contains('hidden') && D().querySelectorAll('#topicsMenu .tp-item').length === 19;
+      click('btnDb'); await sleep(150);
+      const ok = opened && menu.classList.contains('hidden') && !$('dbLab').classList.contains('hidden');
+      w.DatabaseLab.close();
+      click('btnTopics'); await sleep(30); click(D().body); await sleep(30);
+      const closesOutside = menu.classList.contains('hidden');
+      const oneLine = $('btnPractice').getBoundingClientRect().top === $('btnTopics').getBoundingClientRect().top;
+      return (ok && closesOutside && oneLine) || `opened ${opened}, opens a tab ${ok}, closes on outside click ${closesOutside}, one line ${oneLine}`;
+    });
+
+    await check('practice list: the quick-access bar opens every main tab and jumps to a topic', async () => {
+      const w = frame.contentWindow, bad = [];
+      const openList = async () => { click('btnPractice'); await sleep(200); };
+      for (const [k, id] of [['map', 'frontendMap'], ['pixels', 'pixelsLab'], ['perf', 'perfLab'], ['db', 'dbLab'], ['deploy', 'dpLab'], ['process', 'prLab'], ['devtools', 'dvLab'], ['interview', 'ipLab'], ['corporate', 'coLab'], ['terminal', 'tgLab'], ['roles', 'rpLab'], ['expr', 'exLab'], ['ai', 'aiLab'], ['tax', 'txLab'], ['oss', 'osLab'], ['earn', 'emLab'], ['freelance', 'flLab'], ['design', 'dsLab'], ['current', 'scLab'], ['health', 'hcLab'], ['business', 'bzLab']]) {
+        await openList();
+        click(q(`#practiceList [data-plopen="${k}"]`)); await sleep(300);
+        if (!$(id) || $(id).classList.contains('hidden') || !$('practiceList').classList.contains('hidden')) bad.push(k);
+        if ($(id)) $(id).classList.add('hidden');
+      }
+      w.PixelsLab.close(); w.PerfLab.close(); w.DatabaseLab.close(); w.DeployLab.close(); w.ProcessLab.close(); w.DevtoolsLab.close(); w.InterviewPrep.close(); w.CorporateLab.close(); w.TerminalLab.close(); w.RolesPayLab.close(); w.ExpressionTree.close(); w.AiWorkLab.close(); w.TaxLab.close(); w.OssLab.close(); w.EarnLab.close(); w.FreelanceLab.close(); w.DesignLab.close(); w.CurrentLab.close(); w.HealthLab.close(); w.BusinessLab.close();
+      await openList();
+      click(q('#practiceList [data-plopen="projects"]')); await sleep(200);
+      const card = q('#practiceList .modal-card'), head = [...D().querySelectorAll('#practiceList .pl-group')].find(h => h.textContent === 'Real projects');
+      const near = h => Math.abs(h.getBoundingClientRect().top - card.getBoundingClientRect().top) < 140;
+      if (!head || !near(head)) bad.push('projects jump');
+      const sel = q('#practiceList .pl-jump');
+      sel.value = 'Databases'; sel.dispatchEvent(new w.Event('change', { bubbles: true })); await sleep(200);
+      const dbHead = [...D().querySelectorAll('#practiceList .pl-group')].find(h => h.textContent === 'Databases');
+      if (!dbHead || !near(dbHead)) bad.push('topic jump');
+      $('practiceList').classList.add('hidden');
+      return !bad.length || bad.join('; ');
+    });
+
+    await check('🚢 Deployment: the ways, the pipeline, the must-haves, the questions, and the practice tasks', async () => {
+      const w = frame.contentWindow, L = w.DeployLab, bad = [];
+      click('btnDeploy'); await sleep(150);
+      if ($('dpLab').classList.contains('hidden')) return 'the tab did not open';
+      if (D().querySelectorAll('#dpBody .db-card').length !== 5) bad.push('ways');
+      if (D().querySelector('#dpBody pre') || !/a CDN serves them/.test(q('#dpBody').textContent)) bad.push('ways should be brief by default');
+      L.goKey('push'); await sleep(50);
+      if (D().querySelectorAll('#dpBody .dp-chain span').length !== 7 || /npm ci/.test(q('#dpBody').textContent)) bad.push('brief pipeline');
+      click('dpDetail'); await sleep(50);
+      if (D().querySelectorAll('#dpBody .dp-pipe li').length !== 7 || !/npm ci/.test(q('#dpBody').textContent)) bad.push('detailed pipeline');
+      L.goKey('must'); await sleep(50);
+      if (D().querySelectorAll('#dpBody .db-card').length !== 6 || !/index\.html\s+200/.test(q('#dpBody').textContent)) bad.push('detailed must-haves');
+      click('dpDetail'); await sleep(50);
+      if (/index\.html\s+200/.test(q('#dpBody').textContent) || !/never cache index\.html/.test(q('#dpBody').textContent)) bad.push('brief must-haves');
+      L.goKey('quiz'); await sleep(50);
+      if (!L.questions.every(x => x.choices.some(c => c[0] === x.a))) bad.push('an answer is not among its choices');
+      click(q('[data-dpq="4"][data-dpa="cdn"]')); await sleep(50);
+      if (!q('.db-q.no') || !/SPA fallback/.test(q('.db-q.no').textContent)) bad.push('quiz feedback');
+      const inList = w.JSPractice.list().filter(x => x.topic === 'Deployment');
+      if (inList.length !== 10 || inList.some(x => x.icon !== '🚢')) bad.push('practice list has ' + inList.length + ' deployment tasks');
+      L.close();
+      click('btnMap'); await sleep(150);
+      click(q('#frontendMap [data-fmdeploy]')); await sleep(150);
+      if ($('dpLab').classList.contains('hidden')) bad.push('map link');
+      L.close();
+      return !bad.length || bad.join('; ');
+    });
+
+    await check('deeper Deployment (walkthroughs, AWS, releases) and Databases (SQL, schema, React → DB, production, cloud)', async () => {
+      const w = frame.contentWindow, bad = [], DL = w.DeployLab, DB = w.DatabaseLab, txt = id => q(id).textContent;
+      // deployment
+      DL.open(); await sleep(100);
+      DL.goKey('walk'); await sleep(50);
+      for (const wk of DL.walks) {
+        DL.walk(wk.id); await sleep(30);
+        if (D().querySelectorAll('#dpBody .dp-steps li').length !== wk.steps.length || D().querySelector('#dpBody .dp-steps pre')) bad.push('brief walk ' + wk.id);
+      }
+      DL.walk('aws'); click('dpDetail'); await sleep(50);
+      if (!/us-east-1/.test(txt('#dpBody')) || !/create-invalidation/.test(txt('#dpBody')) || !/role-to-assume/.test(txt('#dpBody'))) bad.push('AWS walkthrough commands');
+      click('dpDetail'); await sleep(30);
+      DL.goKey('aws'); await sleep(50);
+      if (D().querySelectorAll('#dpBody .dp-aws li').length < 20 || !/Cloud Run/.test(txt('#dpBody')) || !/Cosmos DB/.test(txt('#dpBody'))) bad.push('AWS map');
+      DL.goKey('release'); await sleep(50);
+      if (D().querySelectorAll('#dpBody .db-card').length !== 9 || !/Canary/.test(txt('#dpBody'))) bad.push('release');
+      if (w.JSPractice.list().filter(x => x.topic === 'Cloud (AWS)').length !== 6) bad.push('AWS practice tasks');
+      DL.close();
+      // databases
+      DB.open(); await sleep(100);
+      DB.goKey('sql'); await sleep(50);
+      const group = DB.sql.find(x => /GROUP BY/.test(x.t)).run(), left = DB.sql.find(x => /LEFT JOIN/.test(x.t)).run();
+      if (JSON.stringify(group) !== JSON.stringify([{ name: 'Bob', orders: 1, spent: 12000 }, { name: 'Ada', orders: 2, spent: 11450 }, { name: 'Cleo', orders: 1, spent: 4200 }])) bad.push('GROUP BY result ' + JSON.stringify(group));
+      if (!left.some(r => r.name === 'Dan' && r.orders === 0)) bad.push('LEFT JOIN result');
+      if (D().querySelectorAll('#dpBody, #dbBody .db-sql').length < 8) bad.push('sql examples');
+      DB.goKey('schema'); await sleep(50);
+      if (D().querySelectorAll('#dbBody .db-table').length !== 6 || /CREATE TABLE/.test(txt('#dbBody'))) bad.push('schema brief');
+      click('dbDetail'); await sleep(50);
+      if (!/REFERENCES users\(id\)/.test(txt('#dbBody'))) bad.push('schema SQL in details');
+      DB.goKey('path'); await sleep(50);
+      if (!/\$1/.test(txt('#dbBody')) || !/include: \{ user: true \}/.test(txt('#dbBody'))) bad.push('React → DB code');
+      click('dbDetail'); await sleep(50);
+      DB.goKey('ops'); await sleep(50);
+      if (D().querySelectorAll('#dbBody .db-card').length !== 9) bad.push('ops');
+      DB.goKey('cloud'); await sleep(50);
+      if (D().querySelectorAll('#dbBody .db-cloud tbody tr').length !== 10 || !/Aurora/.test(txt('#dbBody'))) bad.push('cloud table');
+      DB.close();
+      return !bad.length || bad.join('; ');
+    });
+
+    await check('🏢 How teams work: every phase, the rhythm, the feature story, the situations, and the practice tasks', async () => {
+      const w = frame.contentWindow, L = w.ProcessLab, bad = [], txt = () => q('#prBody').textContent;
+      click('btnProcess'); await sleep(150);
+      if ($('prLab').classList.contains('hidden')) return 'the tab did not open';
+      if (D().querySelectorAll('#prBody .dp-chain span').length !== L.phases.length || !/Product manager/.test(txt())) bad.push('overview');
+      click(q('#prBody [data-prgo="6"]')); await sleep(50);
+      if (!/Pull request and code review/.test($('prTitle').textContent)) bad.push('clicking a phase');
+      for (const p of L.phases) {
+        L.goKey(p.key); await sleep(20);
+        if (!q('#prBody .pr-you') || q('#prBody pre')) bad.push('brief ' + p.key);
+      }
+      L.goKey('review'); click('prDetail'); await sleep(50);
+      if (!/How to test:/.test(txt()) || !q('#prBody pre')) bad.push('PR example in details');
+      L.goKey('after'); await sleep(30);
+      if (!/No blame/.test(txt())) bad.push('postmortem example');
+      click('prDetail'); await sleep(30);
+      L.goKey('story'); await sleep(30);
+      if (D().querySelectorAll('#prBody .pr-story li').length !== 9) bad.push('story');
+      L.goKey('quiz'); await sleep(30);
+      click(q('[data-prq="2"][data-pra="merge"]')); await sleep(30);
+      if (!q('.db-q.no') || !/Split it into smaller PRs/.test(q('.db-q.no').textContent)) bad.push('quiz');
+      if (!L.situations.every(x => x.choices.some(c => c[0] === x.a))) bad.push('an answer is not a choice');
+      const inList = w.JSPractice.list().filter(x => x.topic === 'Working in a team');
+      if (inList.length !== 10 || inList.some(x => x.icon !== '🏢')) bad.push('practice tasks ' + inList.length);
+      L.close();
+      return !bad.length || bad.join('; ');
+    });
+
+    await check('🎯 Interview prep, 🧰 DevTools & debugging, and "While building" in every project brief', async () => {
+      const w = frame.contentWindow, bad = [], IP = w.InterviewPrep, DV = w.DevtoolsLab, groups = w.JSPractice.groups();
+      // interview prep
+      click('btnInterviewPrep'); await sleep(100);
+      if ($('ipLab').classList.contains('hidden')) return 'interview prep did not open';
+      if (D().querySelectorAll('#ipBody .db-card').length !== 7) bad.push('rounds');
+      const missing = IP.qa.filter(x => x[4] && !groups.some(g => g.topic === x[4])).map(x => x[4]).concat(IP.rounds.filter(r => r[4] && r[4].startsWith('topic:') && !groups.some(g => g.topic === r[4].slice(6))).map(r => r[4]));
+      if (IP.qa.length !== 40 || missing.length) bad.push(`questions ${IP.qa.length}, unknown topics ${missing.join(', ')}`);
+      IP.goKey('qa'); await sleep(30);
+      if (D().querySelectorAll('#ipBody .ip-q').length !== 40 || q('#ipBody .ip-a')) bad.push('answers should start hidden');
+      click(q('#ipBody [data-ipq="0"]')); await sleep(30);
+      if (!/remembers the variables/.test(q('#ipBody .ip-a').textContent)) bad.push('opening an answer');
+      click(q('#ipBody .ip-a [data-iptopic]')); await sleep(200);
+      const head = [...D().querySelectorAll('#practiceList .pl-group')].find(h => h.textContent === 'Closures');
+      if (!$('ipLab').classList.contains('hidden') || !head) bad.push('practise link');
+      $('practiceList').classList.add('hidden');
+      IP.open(); IP.goKey('mc'); click('ipDetail'); await sleep(30);
+      if (!/AbortController/.test(q('#ipBody').textContent)) bad.push('machine-coding example');
+      IP.goKey('sd'); await sleep(30);
+      if (D().querySelectorAll('#ipBody .dp-steps li').length !== 5) bad.push('RADIO');
+      IP.goKey('beh'); await sleep(30);
+      if (!/Situation:/.test(q('#ipBody').textContent)) bad.push('STAR example');
+      click('ipDetail'); IP.close();
+      // devtools
+      click('btnDevtools'); await sleep(100);
+      if ($('dvLab').classList.contains('hidden')) return 'devtools did not open';
+      if (D().querySelectorAll('#dvBody .dp-steps li').length !== 7 || q('#dvBody pre')) bad.push('method');
+      DV.go(DV.stages.findIndex(s => s.key === 'Sources')); await sleep(30);
+      if (!/Breakpoints/.test(q('#dvBody').textContent) || q('#dvBody .dv-how')) bad.push('Sources panel brief');
+      click('dvDetail'); await sleep(30);
+      if (!/conditional breakpoint/i.test(q('#dvBody').textContent)) bad.push('Sources details');
+      click('dvDetail'); DV.close();
+      // while building
+      w.ProjectLab.open('p-dashboard'); await sleep(100);
+      if (!/While building/.test(q('#pjBody').textContent) || !q('#pjBody [data-fmdevtools]')) bad.push('while building section');
+      click(q('#pjBody [data-fmdevtools]')); await sleep(100);
+      if ($('dvLab').classList.contains('hidden') || !$('projLab').classList.contains('hidden')) bad.push('DevTools guide link');
+      DV.close();
+      return !bad.length || bad.join('; ');
+    });
+
+    await check('💼 Corporate life: every step draws, details add the examples, the CTC example, situations and practice tasks', async () => {
+      const w = frame.contentWindow, L = w.CorporateLab, bad = [], txt = () => q('#coBody').textContent;
+      click('btnCorporate'); await sleep(100);
+      if ($('coLab').classList.contains('hidden')) return 'the tab did not open';
+      for (const s of L.stages) { L.goKey(s.key); await sleep(20); if (!txt().trim()) bad.push('empty ' + s.key); }
+      L.goKey('types'); await sleep(20);
+      if (D().querySelectorAll('#coBody .co-types .db-card').length !== 11 || q('#coBody .co-dl') || !/GCC/.test(txt())) bad.push('company types (brief)');
+      click('coDetail'); await sleep(20);
+      if (D().querySelectorAll('#coBody .co-dl').length !== 11 || !/Red flags/.test(txt())) bad.push('company types (details)');
+      click('coDetail'); await sleep(20);
+      if (L.stages.some(s => s.key === 'list')) bad.push('the company list should now be its own tab');
+      // 🏙️ Companies: its own window from the top bar
+      const C = w.CompaniesLab;
+      click('btnCompanies'); await sleep(100);
+      if ($('companiesLab').classList.contains('hidden') || !$('coLab').classList.contains('hidden')) bad.push('the Companies tab did not open on its own');
+      for (const [r, word] of [['india', 'Flipkart'], ['abroad', 'Booking.com'], ['remote', 'GitLab']]) {
+        click(q(`#clBody [data-clregion="${r}"]`)); await sleep(15);
+        const names = D().querySelectorAll('#clBody .co-names span').length, want = C.companies[r].reduce((n, [, s]) => n + s.split(', ').length, 0);
+        if (names !== want || !new RegExp(word).test(q('#clBody').textContent)) bad.push(`company list ${r}: ${names} / ${want}`);
+      }
+      for (const r of Object.keys(C.companies)) {
+        const all = C.companies[r].flatMap(([, s]) => s.split(', ')), dupes = all.filter((n, i) => all.indexOf(n) !== i);
+        if (dupes.length) bad.push(`duplicates in ${r}: ${dupes.join(', ')}`);
+        if ((r === 'india' || r === 'abroad') && all.length < 1000) bad.push(`${r} has only ${all.length} companies (want 1000+)`);
+        if (all.some(n => /\?$|^\s|\s$/.test(n) || !n)) bad.push(`odd company name in ${r}`);
+      }
+      click(q('#clBody [data-clregion="bengaluru"]')); await sleep(15);
+      if (!/Razorpay/.test(q('#clBody').textContent) || C.companies.bengaluru.flatMap(([, s]) => s.split(', ')).length < 200) bad.push('Bengaluru list missing');
+      click(q('#clBody [data-clregion="count"]')); await sleep(15);
+      if (D().querySelectorAll('#clBody tr').length < 9 || !/lakh/.test(q('#clBody').textContent)) bad.push('How many? numbers missing');
+      // search filters in place and keeps focus
+      click(q('#clBody [data-clregion="india"]')); await sleep(15);
+      const box = q('#clSearch'); box.focus(); box.value = 'razorpay'; box.dispatchEvent(new w.Event('input', { bubbles: true })); await sleep(15);
+      const shown = [...D().querySelectorAll('#clBody .co-names span')].filter(s => !s.hidden).map(s => s.textContent);
+      if (!shown.includes('Razorpay') || shown.some(s => !/razorpay/i.test(s)) || D().activeElement !== box) bad.push(`company search: ${shown.slice(0, 5).join(', ')}`);
+      box.value = ''; box.dispatchEvent(new w.Event('input', { bubbles: true })); await sleep(15);
+      const oneLine = $('btnPractice').getBoundingClientRect().top === $('btnCompanies').getBoundingClientRect().top && $('btnPractice').getBoundingClientRect().top === $('btnTopics').getBoundingClientRect().top;
+      if (!oneLine) bad.push('the top bar wraps');
+      C.close(); L.open();
+      L.goKey('comm'); await sleep(20);
+      if (q('#coBody pre')) bad.push('communication should be brief by default');
+      click('coDetail'); await sleep(30);
+      if (D().querySelectorAll('#coBody pre').length !== 7 || !/❌ Hi/.test(txt())) bad.push('communication examples');
+      L.goKey('money'); await sleep(30);
+      if (!/≈ ₹82,400/.test(txt()) || !/76,000–77,000/.test(txt())) bad.push('CTC example');
+      click('coDetail'); await sleep(20);
+      L.goKey('quiz'); await sleep(20);
+      click(q('[data-coq="0"][data-coa="quiet"]')); await sleep(20);
+      if (!q('#coBody .db-q.no') || !/Tell your manager now/.test(q('#coBody .db-q.no').textContent)) bad.push('quiz');
+      if (!L.situations.every(x => x.choices.some(c => c[0] === x.a))) bad.push('an answer is not a choice');
+      const inList = w.JSPractice.list().filter(x => x.topic === 'Corporate life');
+      if (inList.length !== 10 || inList.some(x => x.icon !== '💼')) bad.push('practice tasks ' + inList.length);
+      L.close();
+      return !bad.length || bad.join('; ');
+    });
+
+    await check('⌨️ Terminal & Git: start page, every command group, details, warnings, situations and practice tasks', async () => {
+      const w = frame.contentWindow, L = w.TerminalLab, bad = [], txt = () => q('#tgBody').textContent;
+      click('btnTerminal'); await sleep(100);
+      if ($('tgLab').classList.contains('hidden')) return 'the tab did not open';
+      if (!/WSL/.test(txt()) || !/Ctrl\+R/.test(txt())) bad.push('start page');
+      let total = 0;
+      for (const g of L.groups) {
+        L.goKey(g.key); await sleep(15);
+        const rows = D().querySelectorAll('#tgBody .tg-table tr').length;
+        total += rows;
+        if (rows !== g.cmds.length || q('#tgBody .tg-ex')) bad.push('group ' + g.key);
+      }
+      if (total < 70) bad.push('only ' + total + ' commands');
+      L.goKey('git-fix'); click('tgDetail'); await sleep(30);
+      if (!/git switch -c rescue/.test(txt()) || !q('#tgBody tr.danger')) bad.push('details / warnings');
+      click('tgDetail'); await sleep(15);
+      L.goKey('quiz'); await sleep(15);
+      click(q('#tgBody [data-tgq="8"][data-tga="force"]')); await sleep(20);
+      if (!q('#tgBody .db-q.no') || !/force-with-lease/.test(q('#tgBody .db-q.no').textContent)) bad.push('quiz');
+      if (!L.situations.every(x => x.choices.some(c => c[0] === x.a))) bad.push('an answer is not a choice');
+      const inList = w.JSPractice.list().filter(x => x.topic === 'Terminal & Git');
+      if (inList.length !== 10 || inList.some(x => x.icon !== '⌨️')) bad.push('practice tasks ' + inList.length);
+      L.close();
+      return !bad.length || bad.join('; ');
+    });
+
+    await check('💰 Roles & pay: every step draws, details add columns, pay abroad, situations and practice tasks', async () => {
+      const w = frame.contentWindow, L = w.RolesPayLab, bad = [], txt = () => q('#rpBody').textContent;
+      click('btnTopics'); await sleep(20); click('btnRoles'); await sleep(100);
+      if ($('rpLab').classList.contains('hidden')) return 'the tab did not open';
+      for (const s of L.stages) { L.goKey(s.key); await sleep(15); if (txt().length < 200) bad.push('empty step ' + s.key); }
+      L.goKey('roles'); await sleep(15);
+      const briefCols = D().querySelectorAll('#rpBody thead th').length;
+      if (D().querySelectorAll('#rpBody tbody tr').length !== L.roles.length) bad.push('roles table');
+      click('rpDetail'); await sleep(20);
+      if (D().querySelectorAll('#rpBody thead th').length !== briefCols + 1) bad.push('details add a column');
+      L.goKey('pay'); await sleep(15);
+      if (!/Singapore/.test(txt()) || !/LPA/.test(txt())) bad.push('pay details');
+      click('rpDetail'); await sleep(15);
+      if (/SGD/.test(txt())) bad.push('pay abroad should be a detail');
+      L.goKey('extra'); await sleep(15);
+      if (!/ESOP/.test(txt()) || !/RSU/.test(txt()) || !/Joining/.test(txt())) bad.push('extra pay');
+      L.goKey('quiz'); await sleep(15);
+      click(q('#rpBody [data-rpq="0"][data-rpa="total"]')); await sleep(20);
+      if (!q('#rpBody .db-q.no') || !/buyback/.test(q('#rpBody .db-q.no').textContent)) bad.push('quiz');
+      if (!L.situations.every(x => x.choices.some(c => c[0] === x.a))) bad.push('an answer is not a choice');
+      const inList = w.JSPractice.list().filter(x => x.topic === 'Roles & pay');
+      if (inList.length !== 10 || inList.some(x => x.icon !== '💰')) bad.push('practice tasks ' + inList.length);
+      L.close();
+      return !bad.length || bad.join('; ');
+    });
+
+    await check('🤖 AI at work, 🧾 Tax & money, 🌱 Open source: every step draws, details, quizzes, practice tasks; the tax calculator is right', async () => {
+      const w = frame.contentWindow, bad = [];
+      for (const [api, btn, p, cat, icon, n] of [['AiWorkLab', 'btnAi', 'ai', 'AI at work', '🤖', 8], ['TaxLab', 'btnTax', 'tx', 'Tax & money', '🧾', 8], ['OssLab', 'btnOss', 'os', 'Open source', '🌱', 8], ['EarnLab', 'btnEarn', 'em', 'Earning more', '💸', 8], ['FreelanceLab', 'btnFreelance', 'fl', 'Freelancing', '🧑‍💻', 10], ['DesignLab', 'btnDesign', 'ds', 'Design basics', '🎨', 8], ['CurrentLab', 'btnCurrent', 'sc', 'Staying current', '📰', 6], ['HealthLab', 'btnHealth', 'hc', 'Health & career', '🧘', 6], ['BusinessLab', 'btnBusiness', 'bz', 'How companies work', '🏦', 8]]) {
+        const L = w[api];
+        if (btn !== 'btnEarn') { click('btnTopics'); await sleep(20); } // Earn more is on the top bar itself
+        click(btn); await sleep(80);
+        if ($(p + 'Lab').classList.contains('hidden')) { bad.push(api + ' did not open'); continue; }
+        for (const s of L.stages) { L.goKey(s.key); await sleep(10); if (q('#' + p + 'Body').textContent.length < 150) bad.push(`${api} empty step ${s.key}`); }
+        const withDetail = L.stages.find(s => s.detail);
+        if (withDetail) {
+          L.goKey(withDetail.key); await sleep(10);
+          const before = q('#' + p + 'Body').textContent.length;
+          click(p + 'Detail'); await sleep(15);
+          if (q('#' + p + 'Body').textContent.length <= before) bad.push(api + ' details add nothing');
+          click(p + 'Detail'); await sleep(10);
+        }
+        L.goKey('quiz'); await sleep(10);
+        const x = L.situations[0], wrong = x.choices.find(c => c[0] !== x.a)[0];
+        click(q(`#${p}Body [data-${p}q="0"][data-${p}a="${wrong}"]`)); await sleep(15);
+        if (!q(`#${p}Body .db-q.no`)) bad.push(api + ' quiz');
+        if (!L.situations.every(s => s.choices.some(c => c[0] === s.a))) bad.push(api + ': an answer is not a choice');
+        const inList = w.JSPractice.list().filter(t => t.topic === cat);
+        if (inList.length !== n || inList.some(t => t.icon !== icon)) bad.push(`${cat} practice tasks ${inList.length}`);
+        L.close();
+      }
+      // tax: ₹12.75 lakh → 0 (new regime); ₹15 lakh → ₹97,500 new, ₹2,57,400 old (no deductions);
+      // ₹12.85 lakh → taxable ₹12.1 lakh, marginal relief caps the tax at ₹10,000 (+ cess = ₹10,400)
+      // business: ₹1,000 a month at 80% margin and 3% churn → LTV ₹26,667; CAC ₹8,000 → 3.33 : 1, paid back in 10 months
+      const BZ = w.BusinessLab, ue = BZ.unitEconomics({ price: 1000, margin: 80, churn: 3, cac: 8000 });
+      if (Math.round(ue.ltv) !== 26667 || ue.ratio.toFixed(2) !== '3.33' || ue.payback !== 10) bad.push('unit economics maths');
+      BZ.open(); BZ.goKey('unit'); await sleep(15);
+      const churnIn = q('#bzBody [data-bzin="churn"]'); churnIn.value = '10'; churnIn.dispatchEvent(new w.Event('input', { bubbles: true })); await sleep(15);
+      if (q('#bzLtv').textContent !== '₹8,000' || !/Weak/.test(q('#bzUeOut').textContent)) bad.push('unit economics calculator: ' + q('#bzLtv').textContent);
+      churnIn.value = '3'; churnIn.dispatchEvent(new w.Event('input', { bubbles: true })); await sleep(10);
+      BZ.close();
+      // design: the WCAG contrast formula (#767676 passes 4.5:1 on white, #777777 does not; black on white = 21:1) and the type scale
+      const DL = w.DesignLab;
+      if (DL.contrast('#767676', '#ffffff').toFixed(2) !== '4.54' || DL.contrast('#777777', '#ffffff').toFixed(2) !== '4.48' || DL.contrast('#000000', '#ffffff') !== 21) bad.push('contrast maths');
+      if (DL.typeScale(16, 1.25).find(s => s.step === 3).px !== 31.25) bad.push('type scale maths');
+      DL.open(); DL.goKey('colour'); await sleep(15);
+      const fgIn = q('#dsBody input.cl-search[data-dsin="fg"]'); fgIn.value = '#777777'; fgIn.dispatchEvent(new w.Event('input', { bubbles: true })); await sleep(15);
+      if (q('#dsRatio').textContent !== '4.48:1' || !/fails/.test(q('#dsContrastOut').textContent)) bad.push('contrast checker: ' + q('#dsRatio').textContent);
+      fgIn.value = '#767676'; fgIn.dispatchEvent(new w.Event('input', { bubbles: true })); await sleep(10);
+      DL.goKey('type'); await sleep(15);
+      const ratioSel = q('#dsBody select[data-dsin="ratio"]'); ratioSel.value = '1.5'; ratioSel.dispatchEvent(new w.Event('input', { bubbles: true })); await sleep(15);
+      if (!/81px/.test(q('#dsScaleOut').textContent)) bad.push('type scale does not update');
+      ratioSel.value = '1.25'; ratioSel.dispatchEvent(new w.Event('input', { bubbles: true })); await sleep(10);
+      DL.close();
+      // earn more: (₹12,00,000 + ₹1,00,000) ÷ (20 h × 44 weeks) = ₹1,477 an hour; real stories are shown
+      const EM = w.EarnLab;
+      if (Math.round(EM.hourly({ target: 1200000, costs: 100000, hours: 20, weeks: 44 })) !== 1477) bad.push('hourly rate maths');
+      EM.open(); EM.goKey('stories'); await sleep(15);
+      if (D().querySelectorAll('#emBody .db-card').length < 8 || !/Tailwind/.test(q('#emBody').textContent)) bad.push('real stories');
+      EM.goKey('freelance'); await sleep(15);
+      click(q('#emBody [data-fmfreelance]')); await sleep(40);
+      if ($('flLab').classList.contains('hidden') || !$('emLab').classList.contains('hidden')) bad.push('the full Freelancing guide does not open from Earn more');
+      w.FreelanceLab.goKey('scripts'); await sleep(15);
+      if (D().querySelectorAll('#flBody pre').length < 6 || !/Subject:/.test(q('#flBody').textContent)) bad.push('freelancing scripts');
+      w.FreelanceLab.close(); EM.open();
+      EM.goKey('rate'); await sleep(15);
+      if (q('#emHourly').textContent !== '₹1,477') bad.push('rate calculator shows ' + q('#emHourly').textContent);
+      const hrs = q('#emBody [data-emin="hours"]'); hrs.value = '40'; hrs.dispatchEvent(new w.Event('input', { bubbles: true })); await sleep(15);
+      if (q('#emHourly').textContent !== '₹739') bad.push('rate calculator does not update: ' + q('#emHourly').textContent);
+      hrs.value = '20'; hrs.dispatchEvent(new w.Event('input', { bubbles: true })); await sleep(10);
+      EM.close();
+      const T = w.TaxLab;
+      if (T.taxNew(1275000).tax !== 0 || T.taxNew(1500000).tax !== 97500 || T.taxOld(1500000, 0).tax !== 257400 || T.taxNew(1285000).tax !== 10400) bad.push(`tax maths ${T.taxNew(1500000).tax} / ${T.taxOld(1500000, 0).tax} / ${T.taxNew(1285000).tax}`);
+      T.open(); T.goKey('regime'); await sleep(15);
+      const inp = q('#txBody [data-txin="salary"]'); inp.value = '1275000'; inp.dispatchEvent(new w.Event('input', { bubbles: true })); await sleep(15);
+      if (q('#txNewTax').textContent !== '₹0') bad.push('calculator does not update: ' + q('#txNewTax').textContent);
+      inp.value = '1500000'; inp.dispatchEvent(new w.Event('input', { bubbles: true })); await sleep(10);
+      T.close();
+      return !bad.length || bad.join('; ');
+    });
+
+    await check('🌳 Expression tree: grouping, evaluation order, short-circuit, syntax errors, all checked against the real engine; Temporal really runs', async () => {
+      const w = frame.contentWindow, E = w.ExpressionTree, bad = [];
+      const exprs = ['1 + 2 * 3', '2 ** 3 ** 2', '"5" - 2 + "1"', '3 > 2 > 1', '0 || "" || null', 'a ?? 5', 'n > 3 && "big" || "small"', 'user.address?.city', 'user.address?.city.zip', 'list[1] + list.length', '[] + {}', 'typeof typeof 1', 'typeof nope', 'a ? b : c ? "c" : "none"', 'a || b ?? "x"', '(a || b) ?? "x"', '-2 ** 2', '(-2) ** 2', '!a && "yes"', '1 - - 1', 'user.name + " " + c', '"3" * "4" == 12', 'null == 0', 'null >= 0', 'list[5]', 'user.address.city', '.5 + 1e2', 'nope + 1'];
+      for (const x of exprs) { const r = E.run(x); if (!r.agree) bad.push(`${x}: ours ${r.ours.error ? r.ours.error.name : E.fmt(r.ours.value)} vs real ${r.real.error ? r.real.error.name : E.fmt(r.real.value)}`); }
+      const t = E.run('1 + 2 * 3').tree;
+      if (t.op !== '+' || t.right.op !== '*') bad.push('grouping of 1 + 2 * 3');
+      const p = E.run('2 ** 3 ** 2').tree;
+      if (p.left.type !== 'lit' || p.right.op !== '**') bad.push('** should group to the right');
+      const sc = E.run('0 || "" || null');
+      if (sc.ours.steps.length !== 2) bad.push('|| steps ' + sc.ours.steps.length);
+      const skip = E.run('n > 3 && "big" || "small"');
+      if (!skip.tree.right.skipped) bad.push('"small" should be skipped');
+      click('btnTopics'); await sleep(20); click('btnExpr'); await sleep(80);
+      if ($('exLab').classList.contains('hidden') || !q('#exBody svg') || !/checked with the real/.test(q('#exBody').textContent)) bad.push('the tab');
+      const box = q('#exInput'); box.value = 'a ?? 5'; box.dispatchEvent(new w.Event('input', { bubbles: true })); await sleep(15);
+      if (!/Result: 0/.test(q('#exBody').textContent)) bad.push('typing does not update');
+      click(q('#exLab [data-exsrc="-2 ** 2"]')); await sleep(15);
+      if (!/SyntaxError/.test(q('#exBody').textContent) || q('#exBody svg')) bad.push('syntax error example');
+      E.close();
+      w.WebLab.open('ex-optional'); await sleep(40);
+      click(q('#webLab [data-extree]')); await sleep(40);
+      if ($('exLab').classList.contains('hidden') || q('#exInput').value !== 'user.address?.city') bad.push('"See it as a tree" from the practice task');
+      E.close();
+      if (typeof w.Temporal === 'undefined') bad.push('this browser has no Temporal, so the Temporal tasks could not really run');
+      for (const [topic, n] of [['Expressions & precedence', 12], ['Dates: Temporal', 8], ['Node.js: streams & crypto', 10]]) {
+        const c = w.JSPractice.list().filter(x => x.topic === topic).length;
+        if (c !== n) bad.push(`${topic}: ${c} tasks`);
+      }
+      return !bad.length || bad.join('; ');
+    });
+
+    await check('🏆 Get hired: a top-bar tab with every strategy step, details, situations and practice tasks', async () => {
+      const w = frame.contentWindow, L = w.GetHiredLab, bad = [], txt = () => q('#ghBody').textContent;
+      click('btnGetHired'); await sleep(100);
+      if ($('ghLab').classList.contains('hidden')) return 'the tab did not open';
+      const oneLine = ['btnPractice', 'btnMap', 'btnCompanies', 'btnGetHired', 'btnTopics'].every(id => $(id).getBoundingClientRect().top === $('btnPractice').getBoundingClientRect().top);
+      if (!oneLine) bad.push('the top bar wraps');
+      for (const s of L.stages) {
+        L.goKey(s.key); await sleep(15);
+        if (!txt().trim()) bad.push('empty ' + s.key);
+        if (s.cards && D().querySelectorAll('#ghBody .db-card').length !== s.cards.length) bad.push('cards ' + s.key);
+      }
+      L.goKey('resume'); click('ghDetail'); await sleep(30);
+      if (!/✅ Rebuilt the analytics dashboard/.test(txt())) bad.push('resume example in details');
+      L.goKey('hr'); await sleep(20);
+      if (!/present \(role, skills\)/.test(txt()) || !q('#ghBody pre')) bad.push('HR details');
+      click('ghDetail'); await sleep(20);
+      L.goKey('quiz'); await sleep(20);
+      click(q('#ghBody [data-ghq="1"][data-gha="silent"]')); await sleep(20);
+      if (!q('#ghBody .db-q.no') || !/ask for a hint/.test(q('#ghBody .db-q.no').textContent)) bad.push('quiz');
+      if (!L.situations.every(x => x.choices.some(c => c[0] === x.a))) bad.push('an answer is not a choice');
+      const inList = w.JSPractice.list().filter(x => x.topic === 'Interview strategy');
+      if (inList.length !== 12 || inList.some(x => x.icon !== '🏆')) bad.push('practice tasks ' + inList.length);
+      // the human side: each person, objections (scripts only, so details must still be available), closing
+      L.goKey('people'); await sleep(20);
+      if (D().querySelectorAll('#ghBody .db-card').length !== 5 || !/The hiring manager/.test(txt())) bad.push('people');
+      L.goKey('objections'); await sleep(20);
+      if ($('ghDetail').classList.contains('hidden')) bad.push('objections need a details button');
+      click('ghDetail'); await sleep(20);
+      if (D().querySelectorAll('#ghBody .db-card').length !== 7 || !/early release/.test(txt())) bad.push('objection scripts');
+      L.goKey('rapport'); await sleep(20);
+      if (!/makes you hesitate/.test(txt())) bad.push('closing');
+      click('ghDetail'); await sleep(20);
+      L.close();
+      return !bad.length || bad.join('; ');
+    });
+
+    await check('🗺️ map: opens from the header, every practice link points at a real topic / task / project, and a link opens it', async () => {
+      const w = frame.contentWindow, P = w.JSPractice, list = P.list(), groups = P.groups();
+      const broken = w.FRONTEND_MAP.flatMap(([, items]) => items.filter(([, , l]) => l && !['react', 'pixels', 'perf', 'db', 'deploy', 'process', 'devtools', 'interview', 'corporate', 'terminal', 'gethired', 'roles', 'expr', 'ai', 'tax', 'oss', 'earn', 'freelance', 'design', 'current', 'health', 'business'].includes(l)).filter(([, , l]) => {
+        const [k, ref] = l.split(/:(.*)/s);
+        return k === 'topic' ? !groups.some(g => g.topic === ref) : !list.some(t => (k === 'project' ? t.kind === 'project' : t.kind !== 'project') && t.id === ref);
+      }).map(([n, , l]) => `${n} → ${l}`));
+      click('btnMap'); await sleep(200);
+      const shown = !$('frontendMap').classList.contains('hidden') && D().querySelectorAll('#frontendMap .fm-item').length > 100;
+      click(q('#frontendMap [data-fmtopic="Auth & login"]')); await sleep(300);
+      const toList = $('frontendMap').classList.contains('hidden') && !$('practiceList').classList.contains('hidden');
+      $('practiceList').classList.add('hidden');
+      return (!broken.length && shown && toList) || `broken: ${broken.join('; ')} | map shown ${shown}, topic link opens the list ${toList}`;
+    });
+
+    await check('real projects: every project task exists; a task shows "In a real project" and its projects; links open both ways', async () => {
+      const w = frame.contentWindow, P = w.JSPractice, list = P.list();
+      const missing = w.PROJECTS.flatMap(p => (p.practice || []).filter(id => !list.some(x => x.id === id && x.kind !== 'project')).map(id => `${p.id}: ${id}`));
+      const i = list.findIndex(x => x.id === 'render-ssr-click');
+      P.open(i); await sleep(100);
+      const scene = /In a real project/.test(q('#wbScenario').textContent) && !!q('#wbScenario [data-pjopen="p-shop"]');
+      w.WebLab.check('yes'); await sleep(50);
+      const bars = D().querySelectorAll('#wbWhy .wl-mark').length >= 2;
+      click(q('#wbScenario [data-pjopen="p-shop"]')); await sleep(200);
+      const toProject = w.ProjectLab.current() === 'p-shop' && $('webLab').classList.contains('hidden');
+      const link = q('#pjBody [data-pjtask="css-clamp"]');
+      if (link) click(link);
+      await sleep(400);
+      const toTask = !!link && w.CSSLab.current() === 'css-clamp' && /In a real project/.test($('csScene').textContent);
+      w.CSSLab.close();
+      return (!missing.length && scene && bars && toProject && toTask) || `missing ${missing.join(', ')} | scene ${scene}, timeline ${bars}, chip → project ${toProject}, project → task ${toTask}`;
+    });
+
+    await check('Git graph, project briefs and the TypeScript tasks are in the practice list and open', async () => {
+      const w = frame.contentWindow, P = w.JSPractice, list = P.list();
+      w.WebLab.open('git-merge'); await sleep(50);
+      w.WebLab.check('C → B → A'); await sleep(50);
+      const graph = D().querySelectorAll('#wbWhy .gg-node').length === 4 && !!q('#wbWhy .gg-node.merge');
+      w.WebLab.close();
+      const pj = list.findIndex(t => t.id === 'p-setup');
+      P.open(pj); await sleep(200);
+      const brief = !$('projLab').classList.contains('hidden') && D().querySelectorAll('#pjBody .pj-steps li').length >= 4;
+      click('pjNext'); await sleep(200);
+      const next = w.ProjectLab.current() === list[pj + 1].id;
+      w.ProjectLab.close();
+      const ts = list.filter(t => t.kind === 'ts').length === w.TS_TASKS.length && w.TS_TASKS.every(t => t.choices && t.choices.length >= 2);
+      return (graph && brief && next && ts) || `graph ${graph}, brief ${brief}, next ${next}, ts in list ${ts}`;
+    });
+
+    await check('TS lab: the real TypeScript compiler gives every task its intended answer, and shows errors, types and the erased JavaScript', async () => {
+      const w = frame.contentWindow, L = w.TSLab;
+      const want = {
+        'ts-literal': '"hi"', 'ts-union': 'error', 'ts-narrow': 'string', 'ts-unknown': 'line 4', 'ts-optional': 'error', 'ts-nullish': 'number',
+        'ts-excess': 'line 3', 'ts-readonly': 'error', 'ts-literal-union': 'error', 'ts-discriminated': 'line 7',
+        'ts-generic': 'number | undefined', 'ts-constraint': 'line 6', 'ts-keyof': 'number', 'ts-partial': 'compiles', 'ts-omit': 'error',
+        'ts-returntype': '{ id: number; name: string; }', 'ts-record': 'error', 'ts-async': 'Promise<number>', 'ts-guard': 'Fish[]',
+        'ts-react-props': 'line 6', 'ts-react-never': 'never[]', 'ts-react-event': 'compiles',
+      };
+      await L.load();
+      const bad = [];
+      for (const t of w.TS_TASKS) {
+        let r;
+        try { r = L.analyse(t.code, t.tsx); } catch (e) { bad.push(`${t.id}: compiler crashed (${e.message})`); continue; }
+        const got = L.answerOf(t, r);
+        if (got !== want[t.id]) bad.push(`${t.id}: compiler says ${got}, intended ${want[t.id]}`);
+        if (!t.choices.includes(got)) bad.push(`${t.id}: ${got} is not one of the choices`);
+        // only the one error the task is about, never a gap in the small standard library
+        if (r.errors.length > 1 || r.errors.some(e => /Cannot find (name|global)|not a valid async/.test(e.text))) bad.push(`${t.id}: extra errors ${r.errors.map(e => e.text).join(' | ')}`);
+      }
+      const libOk = !L.analyse('const k = Object.keys({ a: 1 });\nconst all = Promise.all([fetch("/a").then(r => r.json())]);\nconst ok = Array.isArray(k) && Number.isNaN(1);').errors.length;
+      L.open('ts-union'); await sleep(300);
+      L.check('compiles'); await sleep(100);
+      const shown = !!q('#tsResult .iv-verdict.bad') && D().querySelectorAll('#tsWhy .wl-steps li.no').length === 1 && /function shout/.test(q('#tsWhy .ts-js').textContent);
+      L.close();
+      return (!bad.length && libOk && shown) || `${bad.join('; ')} | small lib ok ${libOk}, under the hood ${shown}`;
+    });
+
+    await load('level=2&tour&theme=dark');
+    await check('guided tour opens, advances and closes', async () => {
+      await sleep(600);
+      if ($('tour').classList.contains('hidden')) return 'tour not shown';
+      click('tourNext');
+      if (!/2 \/ /.test(q('.tour-count').textContent)) return 'did not advance';
+      key('Escape');
+      return $('tour').classList.contains('hidden') || 'did not close';
+    });
+
+    await load('level=2&theme=light');
+    await check('light theme applies', () => D().documentElement.dataset.theme === 'light' || D().documentElement.dataset.theme);
+
+    document.getElementById('sum').innerHTML = `<span class="${fail ? 'bad' : 'ok'}">${fail ? '✘' : '✔'} ${pass} passed, ${fail} failed</span>`;
+    document.title = (fail ? 'FAIL ' : 'PASS ') + document.title;
+  })();
+  </script>
+</body>
+</html>

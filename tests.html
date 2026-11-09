@@ -1,0 +1,354 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>JS Engine Quest — Tests</title>
+  <style>
+    :root { --bg: #0b0e1f; --panel: #161b36; --line: #2b3264; --text: #e8ebff; --muted: #8e96c8; --ok: #3ee6a8; --bad: #ff5d73; }
+    @media (prefers-color-scheme: light) { :root:not([data-theme="dark"]) { --bg: #f4f6fc; --panel: #fff; --line: #d6dbec; --text: #1b1f36; --muted: #5d6488; --ok: #0a8a5b; --bad: #c8243d; } }
+    body { margin: 0; background: var(--bg); color: var(--text); font: 14px/1.5 system-ui, sans-serif; padding: 16px; }
+    h1 { font-size: 20px; margin: 0 0 4px; } p { color: var(--muted); margin: 0 0 14px; }
+    .sum { font-size: 16px; font-weight: 700; margin: 10px 0; }
+    section { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 10px 14px; margin-bottom: 12px; }
+    h2 { font-size: 15px; margin: 0 0 8px; }
+    .row { font-family: Consolas, monospace; font-size: 12.5px; padding: 2px 0; border-bottom: 1px dashed var(--line); }
+    .ok { color: var(--ok); } .bad { color: var(--bad); }
+    pre { white-space: pre-wrap; margin: 2px 0 6px 18px; color: var(--muted); font-size: 12px; }
+  </style>
+</head>
+<body>
+  <h1>🧪 JS Engine Quest — test suite</h1>
+  <p>Runs every level, feature program and challenge through the visualizer's engine, then compares the console output with <b>real JavaScript</b> running in this browser. Open this file after changing the engine to catch mistakes.</p>
+  <div class="sum" id="sum">Running…</div>
+  <div id="out"></div>
+
+  <script src="vendor/acorn.js"></script>
+  <script src="js/examples.js"></script>
+  <script src="js/challenges.js"></script>
+  <script src="js/interview.js"></script>
+  <script src="js/interview-more.js"></script>
+  <script src="js/interview-extra.js"></script>
+  <script src="js/interview-engine.js"></script>
+  <script src="js/interview-design.js"></script>
+  <script src="js/write-it.js"></script>
+  <script src="js/engine/core.js"></script>
+  <script src="js/engine/builtins.js"></script>
+  <script src="js/engine/classes.js"></script>
+  <script src="js/engine/promises.js"></script>
+  <script src="js/engine/methods.js"></script>
+  <script src="js/engine/members.js"></script>
+  <script src="js/engine/program.js"></script>
+  <script src="js/engine/statements.js"></script>
+  <script src="js/engine/expressions.js"></script>
+  <script src="js/engine/extras.js"></script>
+  <script src="js/engine/browser.js"></script>
+  <script src="js/engine/platform.js"></script>
+  <script src="js/engine/threads.js"></script>
+  <script src="js/engine/node.js"></script>
+  <script src="js/engine/protos.js"></script>
+  <script src="js/engine/observers.js"></script>
+  <script src="js/engine/evalviz.js"></script>
+  <script src="js/engine/nodeplus.js"></script>
+  <script src="js/engine/typescript.js"></script>
+  <script src="js/explain.js"></script>
+  <script>
+  (async function () {
+    'use strict';
+    const out = document.getElementById('out');
+    let pass = 0, fail = 0;
+    const section = title => { const s = document.createElement('section'); s.innerHTML = `<h2>${title}</h2>`; out.appendChild(s); return s; };
+    const row = (sec, ok, label, detail) => {
+      ok ? pass++ : fail++;
+      const d = document.createElement('div');
+      d.className = 'row ' + (ok ? 'ok' : 'bad');
+      d.textContent = (ok ? '✔ ' : '✘ ') + label;
+      sec.appendChild(d);
+      if (detail && !ok) { const p = document.createElement('pre'); p.textContent = detail; sec.appendChild(p); }
+    };
+
+    // ---- run code in the visualizer engine
+    function engine(code) {
+      const r = new JSEngine.Interpreter(code).run();
+      if (r.error) return { error: r.error, lines: [] };
+      const last = r.trace[r.trace.length - 1];
+      return { lines: last.console.map(l => l.text), steps: r.trace.length, last };
+    }
+
+    // ---- run the same code for real, with stand-ins for the visualizer's pretend browser
+    function real(code, waitMs) {
+      return new Promise(done => {
+        const lines = [];
+        const fmt = a => typeof a === 'bigint' ? a + 'n' : typeof a === 'string' ? a
+          : Array.isArray(a) ? '[' + a.map(x => (typeof x === 'string' ? `'${x}'` : String(x))).join(', ') + ']' : String(a);
+        let depth = 0; const counts = {};
+        const con = { log: (...a) => lines.push('  '.repeat(depth) + a.map(fmt).join(' ')), group: (...a) => { lines.push('▾ ' + a.join(' ')); depth++; }, groupEnd: () => depth--, count: (k = 'default') => { counts[k] = (counts[k] || 0) + 1; lines.push(k + ': ' + counts[k]); } };
+        con.info = con.log; con.warn = con.log; con.error = con.log;
+        const users = [{ id: 1, name: 'Ada Lovelace' }, { id: 2, name: 'Linus' }, { id: 3, name: 'Grace Hopper' }];
+        const fakeFetch = url => new Promise(res => setTimeout(() => {
+          let status = 404, data = { error: 'Not found' };
+          const m = String(url).match(/^\/api\/users\/(\d+)$/);
+          if (m && users[+m[1] - 1]) { status = 200; data = users[+m[1] - 1]; }
+          else if (url === '/api/users') { status = 200; data = users; }
+          else if (url === '/api/todos') { status = 200; data = [{ id: 1 }, { id: 2 }, { id: 3 }]; }
+          res({ status, ok: status < 300, json: () => Promise.resolve(data) });
+        }, 300));
+        const els = {};
+        const mk = id => (els[id] = { id, textContent: '', listeners: [], addEventListener(t, f) { this.listeners.push([t, f]); }, click() { this.listeners.forEach(([t, f]) => t === 'click' && f.call(this, { type: 'click', target: this })); } });
+        ['btn', 'output', 'title', 'name'].forEach(mk);
+        const lis = [];
+        const doc = { getElementById: id => els[id], querySelector: s => els[s.slice(1)], querySelectorAll: s => (s === 'li' ? lis : []), createElement: tag => ({ tag, textContent: '' }), body: { appendChild(c) { if (c.tag === 'li') lis.push(c); } } };
+        const click = (sel, d = 0) => setTimeout(() => els[sel.slice(1)].click(), d);
+        const onRej = e => { lines.push('Uncaught (in promise) ' + e.reason); e.preventDefault(); };
+        window.addEventListener('unhandledrejection', onRej);
+        try { new Function('console', 'fetch', 'document', 'simulateClick', 'requestAnimationFrame', code)(con, fakeFetch, doc, click, cb => setTimeout(() => cb(0), 16)); }
+        catch (e) { lines.push('Uncaught ' + e.name + ': ' + e.message); }
+        setTimeout(() => { window.removeEventListener('unhandledrejection', onRej); done(lines); }, waitMs);
+      });
+    }
+
+    // programs whose real-JS output can't be reproduced exactly (module files, console formatting of objects)
+    // module files can't run with new Function, and real garbage collection timing is unpredictable
+    const SKIP_REAL = new Set(['modules', 'tla', 'platform', 'realnet', 'webpage', 'storage', 'descriptors', 'binary', 'urlabort', 'lazyimport', 'workers', 'nodeloop', 'emitter', 'sharedmem', 'nodefs', 'nodehttp', 'mutationobs', 'commonjs', 'typescript', 'streams']);
+    const FEATURES = {
+      closuresInLoops: 'const fns = []; for (let i = 0; i < 3; i++) fns.push(() => i); console.log(fns.map(f => f()).join());',
+      promiseOrder: 'setTimeout(()=>console.log("t"),0); Promise.resolve().then(()=>console.log("p1")).then(()=>console.log("p2")); queueMicrotask(()=>console.log("q")); console.log("s");',
+      adoptTicks: 'Promise.resolve().then(()=>{console.log("a"); return Promise.resolve();}).then(()=>console.log("b"));\nPromise.resolve().then(()=>console.log(1)).then(()=>console.log(2)).then(()=>console.log(3)).then(()=>console.log(4));',
+      asyncOrder: 'async function x(){ console.log(1); await undefined; console.log(3); }\nasync function y(){ console.log(2); await undefined; console.log(4); }\nx(); y();',
+      classes: 'class A { #s = 1; static n = 0; constructor(v){ this.v = v; A.n++; } get s(){ return this.#s; } m(){ return "A" + this.v; } }\nclass B extends A { m(){ return super.m() + "B"; } }\nconst b = new B(2); console.log(b.m(), b.s, A.n, b instanceof A, Object.keys(b).join());',
+      generators: 'function* g(){ const r = yield 1; console.log("got", r); yield 2; return 3; }\nconst it = g(); console.log(it.next().value, it.next("x").value, JSON.stringify(it.next()), JSON.stringify(it.next()));\nfunction* inf(){ let i = 0; while (true) yield i++; } const [p, q] = inf(); console.log(p, q);',
+      asyncGen: 'const w = ms => new Promise(r => setTimeout(r, ms));\nasync function* s(){ yield 1; await w(5); yield 2; }\n(async () => { for await (const v of s()) console.log(v); })();',
+      mapSet: 'const m = new Map([["a", 1]]); m.set("b", 2); console.log(m.size, [...m.keys()].join(), [...new Set([1, 1, 2])].join());',
+      regex: 'console.log("a1b22".match(/\\d+/g).join("|"), "2024-01-05".replace(/(\\d+)-(\\d+)-(\\d+)/, "$3/$2/$1"), /^h/i.test("Hi"));',
+      strict: '"use strict"; function t(){ return this; } console.log(t()); try { undeclared = 1; } catch (e) { console.log(e.name); }',
+      thenable: '(async () => { const v = await { then(r){ r(42); } }; console.log(v); })();',
+      toPrimitive: 'const o = { valueOf(){ return 5; }, toString(){ return "five"; } }; console.log(o + 1, `${o}`, o > 3);',
+      bigint: 'console.log(2n ** 64n, typeof 1n, 7n / 2n); try { 1n + 1; } catch (e) { console.log(e.name); }',
+      proxy: 'const p = new Proxy({ a: 1 }, { get(t, k){ return k in t ? t[k] : "none"; } }); console.log(p.a, p.b);',
+      extendsArray: 'class S extends Array { top(){ return this[this.length - 1]; } } const s = new S(); s.push(1, 2); console.log(s.top(), s instanceof Array);',
+      fetch: '(async () => { const r = await fetch("/api/users/2"); console.log((await r.json()).name, r.ok); })(); fetch("/api/x").then(r => console.log(r.status));',
+      dom: 'const b = document.getElementById("btn"); b.addEventListener("click", e => console.log("clicked", e.type)); simulateClick("#btn", 50); b.click();',
+      tdzError: 'try { console.log(x); let x = 1; } catch (e) { console.log(e.name); }',
+      destructuring: 'const { a, b: [c, ...d] } = { a: 1, b: [2, 3, 4] }; console.log(a, c, d.join());',
+      evalDirect: 'const x = 10; console.log(eval("x * 2")); function f(){ eval("var leaked = 5"); return leaked; } console.log(f()); const add = new Function("a", "b", "return a + b"); console.log(add(2, 3)); try { eval("1 +"); } catch (e) { console.log(e.name); }',
+      intl: 'console.log(new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(1234.5), new Intl.PluralRules("en-US").select(2), new Intl.ListFormat("en", { type: "conjunction" }).format(["a", "b"]), (1234.5).toLocaleString("de-DE"));',
+      labels: 'outer: for (let i = 0; i < 3; i++) { for (let j = 0; j < 3; j++) { if (j === 1) continue outer; if (i === 2) break outer; console.log(i, j); } }',
+    };
+
+    // ---- 1) every level
+    const lv = section('📚 Levels (engine output vs real JavaScript)');
+    for (const L of window.JS_LEVELS) {
+      const e = engine(L.code);
+      if (e.error) { row(lv, false, L.id, e.error); continue; }
+      if (SKIP_REAL.has(L.id)) { row(lv, e.last.kind === 'done', `${L.id} (engine only, ${e.steps} steps)`, e.lines.join('\n')); continue; }
+      const r = await real(L.code, /interval/.test(L.id) ? 3500 : 1600);
+      const ok = JSON.stringify(e.lines) === JSON.stringify(r);
+      row(lv, ok, `${L.id} (${e.steps} steps)`, `engine: ${e.lines.join(' | ')}\nreal:   ${r.join(' | ')}`);
+    }
+
+    // ---- 2) feature programs
+    const ft = section('⚙️ Language features');
+    for (const [name, code] of Object.entries(FEATURES)) {
+      const e = engine(code);
+      if (e.error) { row(ft, false, name, e.error); continue; }
+      const r = await real(code, 900);
+      const ok = JSON.stringify(e.lines) === JSON.stringify(r);
+      row(ft, ok, name, `engine: ${e.lines.join(' | ')}\nreal:   ${r.join(' | ')}`);
+    }
+    const mod = engine('// @file a.js\nexport let n = 0; export function inc(){ n++; }\n// @file main.js\nimport { n, inc } from "./a.js"; console.log(n); inc(); console.log(n);');
+    row(ft, JSON.stringify(mod.lines) === JSON.stringify(['0', '1']), 'modules: live import bindings', mod.lines.join(' | '));
+    const tla = engine('// @file a.js\nconsole.log("a1"); await new Promise(r => setTimeout(r, 50)); export const v = 7; console.log("a2");\n// @file main.js\nimport { v } from "./a.js"; console.log("main", v);');
+    row(ft, JSON.stringify(tla.lines) === JSON.stringify(['a1', 'a2', 'main 7']), 'modules: top-level await makes importers wait', tla.lines.join(' | '));
+    const weak = engine('let o = { n: 1 }; const w = new WeakRef(o); const r = new FinalizationRegistry(h => console.log("cleanup", h)); r.register(o, "o"); console.log(w.deref().n); o = null; setTimeout(() => console.log(w.deref()), 100);');
+    // cleanup callbacks have no guaranteed order relative to timers, so compare the lines in any order
+    row(ft, JSON.stringify(weak.lines.slice().sort()) === JSON.stringify(['1', 'cleanup o', 'undefined']), 'WeakRef + FinalizationRegistry follow the simulated GC', weak.lines.join(' | '));
+    const mock = engine('mockFetch("/api/x", { ok: 1 }, { delay: 20 }); fetch("/api/x").then(r => r.json()).then(d => console.log(d.ok));');
+    row(ft, mock.lines.join() === '1', 'mockFetch custom routes', mock.lines.join(' | '));
+
+    // ---- browser environment (engine-level: these use data the app normally collects between runs)
+    const br = section('🌐 Browser environment');
+    const engineWith = (code, opts) => { const it = new JSEngine.Interpreter(code, opts); const r = it.run(); const last = r.trace[r.trace.length - 1]; return { it, lines: last.console.map(l => l.text), last }; };
+    const netCode = 'fetch("https://api.example.com/u").then(r => r.json()).then(u => console.log(u.name)); fetch("https://down.example.com/").catch(e => console.log(e.message));';
+    const n1 = engineWith(netCode, { netCache: new Map() });
+    row(br, n1.it.netMisses.length === 2, 'real fetch: first run reports which URLs to download');
+    const cache = new Map([[n1.it.netMisses[0].key, { status: 200, headers: [], body: '{"name":"Real Ada"}', latency: 80 }], [n1.it.netMisses[1].key, { error: 'Failed to fetch', latency: 20 }]]);
+    const n2 = engineWith(netCode, { netCache: cache });
+    row(br, n2.lines.join('|') === 'Failed to fetch|Real Ada', 'real fetch: replay uses the real response and real timing', n2.lines.join(' | '));
+    const dl = engineWith('const a = confirm("ok?"); const b = prompt("name?"); console.log(a, b);', { answers: [true, 'Ada'] });
+    row(br, dl.lines.join() === 'true Ada', 'confirm / prompt answers are replayed', dl.lines.join(' | '));
+    const sg = engineWith('localStorage.setItem("n", Number(localStorage.getItem("n") || 0) + 1); console.log(localStorage.getItem("n"), typeof localStorage.getItem("n"));', { storage: { n: '2' } });
+    row(br, sg.lines.join() === '3 string' && sg.it.storageOut.n === '3', 'localStorage reads saved values and returns strings', sg.lines.join(' | '));
+    const pg = engineWith('// @file index.html\n<ul id="l"><li>a</li><li>b</li></ul>\n// @file s.js\ndocument.querySelector("#l").addEventListener("click", e => { e.target.classList.add("x"); console.log(e.target.textContent, e.currentTarget.id, e.target.className); }); simulateClick("#l li:last-child", 10);', {});
+    row(br, pg.lines.join() === 'b l x', 'real DOM: CSS selectors, bubbling (delegation), classList', pg.lines.join(' | '));
+    const ue = engineWith('// @file index.html\n<button>Go</button>\n// @file s.js\ndocument.querySelector("button").onclick = () => console.log("clicked");', { events: [{ type: 'click', path: [0], at: 5 }] });
+    row(br, ue.lines.join() === 'clicked', 'clicks made in the page preview are replayed as events', ue.lines.join(' | '));
+    const xh = engineWith('const x = new XMLHttpRequest(); x.open("GET", "/api/users/2"); x.onload = () => console.log(x.status, JSON.parse(x.responseText).name); x.send();', {});
+    row(br, xh.lines.join() === '200 Linus', 'XMLHttpRequest', xh.lines.join(' | '));
+    // ---- platform features (expected values checked against real browsers / Node)
+    const pf = section('🧰 Platform features');
+    const chk = (label, code, expect, opts) => { const r = engineWith(code, opts || {}); row(pf, r.lines.join(' | ') === expect, label, `engine: ${r.lines.join(' | ')}\nexpect: ${expect}`); };
+    chk('Promise.allSettled / any / AggregateError', 'Promise.allSettled([Promise.resolve(1), Promise.reject(new Error("x"))]).then(r => console.log(r.map(x => x.status).join())); Promise.any([Promise.reject(1), Promise.reject(2)]).catch(e => console.log(e.name, e.errors.length));', 'fulfilled,rejected | AggregateError 2');
+    chk('property descriptors & seal', 'const o = {}; Object.defineProperty(o, "k", { value: 1 }); o.k = 2; const d = Object.getOwnPropertyDescriptor(o, "k"); console.log(o.k, Object.keys(o).length, JSON.stringify(o), d.writable, d.enumerable); const s = Object.seal({ a: 1 }); s.b = 1; delete s.a; console.log(JSON.stringify(s));', '1 0 {} false false | {"a":1}');
+    chk('toSorted / with / groupBy / structuredClone / cause', 'const a = [3, 1, 2]; console.log(a.toSorted().join(), a.join(), a.with(0, 9).join()); console.log(Object.groupBy([1, 2, 3], n => n % 2 ? "odd" : "even").odd.join()); const c = structuredClone({ n: [1] }); console.log(JSON.stringify(c), new Error("e", { cause: "why" }).cause);', '1,2,3 3,1,2 9,1,2 | 1,3 | {"n":[1]} why');
+    chk('typed arrays, shared buffers, TextEncoder', 'const b = new Uint8Array(2); b[0] = 256; b[1] = -1; const buf = new ArrayBuffer(4); new Uint32Array(buf)[0] = 258; console.log(b.join(), new Uint8Array(buf).join(), new TextEncoder().encode("é").length);', '0,255 2,1,0,0 2');
+    chk('URL / URLSearchParams', 'const u = new URL("https://a.example/p?x=1"); u.searchParams.set("y", "2"); console.log(u.hostname, u.search, new URLSearchParams("a=1&b=2").get("b"));', 'a.example ?x=1&y=2 2');
+    chk('AbortController cancels fetch', 'const c = new AbortController(); fetch("/api/slow", { signal: c.signal }).catch(e => console.log(e.name)); setTimeout(() => c.abort(), 10);', 'AbortError');
+    chk('Symbol.hasInstance / toStringTag / Object.prototype.toString', 'class Even { static [Symbol.hasInstance](n) { return n % 2 === 0; } } console.log(4 instanceof Even, Object.prototype.toString.call([]), String({ get [Symbol.toStringTag]() { return "X"; } }));', 'true [object Array] [object X]');
+    chk('dynamic import()', '// @file m.js\nexport const v = 5;\n// @file main.js\nimport("./m.js").then(m => console.log(m.v));', '5');
+    chk('Web Worker messages are copies', '// @file worker.js\nself.onmessage = e => { e.data.push(1); postMessage(e.data.length); };\n// @file main.js\nconst w = new Worker("worker.js"); const arr = []; w.onmessage = e => console.log(e.data, arr.length); w.postMessage(arr);', '1 0');
+    chk('Node: nextTick → promises → timers → check', '// @env node\nsetImmediate(() => console.log("i")); setTimeout(() => console.log("t"), 0); Promise.resolve().then(() => console.log("p")); process.nextTick(() => console.log("n")); console.log("s");', 's | n | p | t | i');
+    chk('Node: EventEmitter + util.promisify', '// @env node\nconst E = require("events"); const e = new E(); e.once("x", v => console.log("once", v)); e.emit("x", 1); e.emit("x", 2); require("util").promisify((a, cb) => cb(null, a + 1))(1).then(v => console.log(v));', 'once 1 | 2');
+    const s1 = engineWith('console.log(Math.random(), crypto.randomUUID());', { seed: 9 }).lines.join(), s2 = engineWith('console.log(Math.random(), crypto.randomUUID());', { seed: 9 }).lines.join();
+    row(pf, s1 === s2, 'seeded randomness repeats exactly on re-runs');
+    const intl = engineWith('function P(x){ this.x = x; } const a = new P(1), b = new P(2), c = { x: 3, y: 1 }; const f = o => o.x; f(a); f(b); f(c); console.log("ok");', {});
+    row(pf, intl.last.ic && intl.last.ic.some(s => s.shapes === 2), 'engine internals: inline cache sees 2 hidden classes', JSON.stringify(intl.last.ic));
+    const lim = engineWith('while (true) {}', { maxSteps: 150 });
+    row(br, lim.last.kind === 'error' && /150 steps/.test(lim.last.msg), 'step limit setting');
+
+    // ---- threads, shared memory and Node built-ins (expected values checked against real Chrome / Node)
+    const th = section('🧵 Threads, shared memory & Node modules');
+    const chk2 = (label, code, expect, test) => {
+      let r; try { r = engineWith(code, {}); } catch (e) { row(th, false, label, String(e && e.stack || e)); return; }
+      const got = r.lines.join(' | ');
+      row(th, got === expect && r.last.kind === 'done' && (!test || test(r)), label, `engine: ${got}\nexpect: ${expect}\nlast: ${r.last.kind} ${r.last.msg || ''}`);
+    };
+    chk2('SharedArrayBuffer is shared (not copied) with a worker', '// @file worker.js\nself.onmessage = e => { const a = new Int32Array(e.data); a[0] = 42; postMessage("done"); };\n// @file main.js\nconst sab = new SharedArrayBuffer(4); const arr = new Int32Array(sab); const w = new Worker("worker.js"); w.onmessage = () => console.log(arr[0]); w.postMessage(sab);', '42');
+    const race = safe => `// @file worker.js\nself.onmessage = e => {\n  const a = new Int32Array(e.data);\n  for (let i = 0; i < 3; i++) {\n    ${safe ? 'Atomics.add(a, 0, 1);' : 'const v = a[0];\n    a[0] = v + 1;'}\n  }\n  postMessage("done");\n};\n// @file main.js\nconst sab = new SharedArrayBuffer(4); const a = new Int32Array(sab); let done = 0;\nfor (let k = 0; k < 2; k++) { const w = new Worker("worker.js"); w.onmessage = () => { if (++done === 2) console.log(a[0]); }; w.postMessage(sab); }`;
+    chk2('two threads interleave: unsafe read-then-write loses updates', race(false), '3', r => r.it.trace.some(s => s.threads && s.threads.length === 2));
+    chk2('Atomics.add makes the same counter correct', race(true), '6');
+    chk2('Atomics.wait sleeps until Atomics.notify', '// @file waiter.worker.js\nself.onmessage = e => { const a = new Int32Array(e.data); const r = Atomics.wait(a, 0, 0); postMessage("woke:" + r + ":" + a[1]); };\n// @file notifier.worker.js\nself.onmessage = e => { const a = new Int32Array(e.data); a[1] = 42; Atomics.store(a, 0, 1); Atomics.notify(a, 0); postMessage("notified"); };\n// @file main.js\nconst sab = new SharedArrayBuffer(8);\nfor (const f of ["waiter.worker.js", "notifier.worker.js"]) { const w = new Worker(f); w.onmessage = e => console.log(e.data); w.postMessage(sab); }', 'notified | woke:ok:42', r => r.it.trace.some(s => s.threads && s.threads.some(t => t.sleeping)));
+    chk2('Atomics.wait is not allowed on the main thread', 'try { Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0); } catch (e) { console.log(e.name); } console.log(Atomics.add(new Int32Array(2), 1, 5), Atomics.compareExchange(new Int32Array([7]), 0, 7, 9));', 'TypeError | 0 7');
+    chk2('Node path module', '// @env node\nconst path = require("path"); console.log(path.join("/a/b", "../c", "x.txt"), path.basename("/a/b.js", ".js"), path.extname("f.tar.gz"), path.resolve("data", "f.json"), path.relative("/a/b/c", "/a/d"), path.dirname("/a/b/c"), path.parse("/x/y.md").name);', '/a/c/x.txt b .gz /home/user/app/data/f.json ../../d /a/b y');
+    chk2('Node fs: sync, callback and promise styles in the right order', '// @env node\n// @file todo.txt\nbuy milk\n// @file main.js\nconst fs = require("fs"); console.log(fs.readFileSync("todo.txt", "utf8").trim()); fs.readFile("todo.txt", "utf8", (err, t) => console.log("cb", err, t.length)); fs.promises.readFile("nope.txt").catch(e => console.log(e.code)); fs.writeFileSync("out.txt", "hi"); console.log(fs.existsSync("out.txt"), fs.readFileSync("out.txt").toString(), fs.readdirSync(".").join()); console.log("end");', 'buy milk | true hi out.txt,package.json,todo.txt | end | cb null 9 | ENOENT', r => r.last.files && r.last.files.some(f => f.name === 'out.txt' && f.changed));
+    chk2('Node http: server and fetch client in one program', '// @env node\nconst http = require("http");\nconst server = http.createServer((req, res) => { res.writeHead(200, { "Content-Type": "application/json" }); res.end(JSON.stringify({ path: req.url, m: req.method })); });\nserver.listen(3000, async () => { const r = await fetch("http://localhost:3000/hi?x=1"); const d = await r.json(); console.log(r.status, d.path, d.m, r.headers.get("content-type")); server.close(); });', '200 /hi?x=1 GET application/json');
+    chk2('Node http: POST body arrives as data/end events', '// @env node\nconst http = require("http");\nconst s = http.createServer((req, res) => { let body = ""; req.on("data", c => body += c); req.on("end", () => { res.statusCode = 201; res.end("got " + JSON.parse(body).n); }); }).listen(8080);\nfetch("http://localhost:8080/items", { method: "POST", body: JSON.stringify({ n: 3 }) }).then(r => r.text().then(t => console.log(r.status, t)));', '201 got 3');
+    chk2('browser: a data file is served to fetch', '// @file data.json\n{"n": 5}\n// @file main.js\nfetch("data.json").then(r => r.json()).then(d => console.log(d.n));', '5');
+    chk2('MutationObserver: records arrive as one microtask, in the right order', '// @file index.html\n<ul id="list"></ul>\n// @file main.js\nconst list = document.getElementById("list");\nnew MutationObserver(records => console.log("observer:", records.length, records[0].type, records[0].addedNodes.length)).observe(list, { childList: true });\nPromise.resolve().then(() => console.log("promise queued before the change"));\nlist.appendChild(document.createElement("li"));\nlist.appendChild(document.createElement("li"));\nPromise.resolve().then(() => console.log("promise queued after the change"));\nsetTimeout(() => console.log("timeout"), 0);\nconsole.log("sync done");', 'sync done | promise queued before the change | observer: 2 childList 1 | promise queued after the change | timeout');
+    chk2('MutationObserver: attribute changes with oldValue', '// @file index.html\n<p id="p" class="a">x</p>\n// @file main.js\nconst p = document.getElementById("p");\nconst mo = new MutationObserver(rs => rs.forEach(r => console.log(r.type, r.attributeName, r.oldValue)));\nmo.observe(p, { attributes: true, attributeOldValue: true });\np.className = "b";\np.setAttribute("title", "hi");', 'attributes class a | attributes title null');
+    chk2('ResizeObserver: initial notification (simulated sizes)', '// @file index.html\n<div id="box" style="width: 120px; height: 40px"></div>\n// @file main.js\nnew ResizeObserver(entries => console.log("size", entries[0].contentRect.width, entries[0].contentRect.height)).observe(document.getElementById("box"));\nconsole.log("observing");', 'observing | size 120 40');
+    chk2('Node: require() your own CommonJS files (cached)', '// @env node\n// @file math.js\nconsole.log("math.js runs once");\nlet calls = 0;\nmodule.exports = { add: (a, b) => { calls++; return a + b; }, count: () => calls };\n// @file greet.js\nexports.hello = name => "Hello " + name;\n// @file main.js\nconst math = require("./math.js");\nconst again = require("./math");\nconst { hello } = require("./greet.js");\nconsole.log(math.add(2, 3), math === again, math.count());\nconsole.log(hello("Ada"));\ntry { require("./missing.js"); } catch (e) { console.log(e.message.startsWith("Cannot find module")); }', 'math.js runs once | 5 true 1 | Hello Ada | true');
+    chk2('TypeScript: annotations, interfaces, generics, as, !, classes', '// @lang ts\ninterface User { id: number; name: string; tags?: string[] }\ntype Id = number | string;\nfunction greet(user: User, punct: string = "!"): string { return "Hi " + user.name + punct; }\nconst users: User[] = [{ id: 1, name: "Ada" }, { id: 2, name: "Bob", tags: ["x"] }];\nconst byId = new Map<number, User>();\nusers.forEach((u: User): void => { byId.set(u.id, u); });\nclass Box<T> {\n  private items: T[] = [];\n  readonly label: string;\n  constructor(label: string) { this.label = label; }\n  add(item: T): this { this.items.push(item); return this; }\n  get size(): number { return this.items.length; }\n}\nconst box = new Box<number>("nums").add(1).add(2);\nconst first = users[0]!;\nconst id = (first.id as number) + 1;\nlet total: number = 0, label: string = "sum";\nfor (const u of users) total += u.id;\nconst pick = <K extends keyof User>(u: User, key: K): User[K] => u[key];\nconst size = total > 2 ? "big" : "small";\nconsole.log(greet(users[0]), greet(byId.get(2)!, "?"), box.size, box.label, id, label, total, pick(first, "name"), size);', 'Hi Ada! Hi Bob? 2 nums 2 sum 3 Ada big');
+    (() => {
+      const r = new JSEngine.Interpreter('// @lang ts\nenum Color { Red, Green }\nconsole.log(Color.Red);', {}).run();
+      row(th, !!r.error && /^TypeScript: "enum"/.test(r.error) && r.errorLine === 2, 'TypeScript: unsupported syntax gives a clear error with its line', r.error);
+    })();
+    chk2('Temporal: immutable dates, add, until, compare, Duration', 'const d = Temporal.PlainDate.from("2024-01-31");\nconst e = d.add({ months: 1 });\nconsole.log(d.toString(), e.toString(), e.dayOfWeek, d.until(e).days, Temporal.PlainDate.compare(d, e));\nconsole.log(Temporal.Duration.from({ hours: 1, minutes: 90 }).total({ unit: "minutes" }));', '2024-01-31 2024-02-29 4 29 -1 | 150');
+    chk2('Node: crypto hashes and Buffer encodings', '// @env node\nconst crypto = require("crypto");\nconsole.log(crypto.createHash("sha256").update("abc").digest("hex"));\nconsole.log(crypto.createHash("sha1").update("a").update("bc").digest("hex"));\nconsole.log(Buffer.from("hi").toString("hex"), Buffer.from("aGk=", "base64").toString(), Buffer.from("héllo").length, Buffer.isBuffer(Buffer.alloc(2)));', 'ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad | a9993e364706816aba3e25717850c26c9cd0d89d | 6869 hi 6 true');
+    chk2('Node: stream pipeline, Transform and for await', '// @env node\nconst { Readable, Transform, Writable, pipeline } = require("stream");\nconst upper = new Transform({ transform(chunk, enc, cb) { cb(null, String(chunk).toUpperCase()); } });\nconst out = [];\nconst sink = new Writable({ write(chunk, enc, cb) { out.push(chunk); cb(); } });\npipeline(Readable.from(["a", "b", "c"]), upper, sink, () => console.log("done:", out.join("")));\n(async () => { const got = []; for await (const x of Readable.from([1, 2, 3])) got.push(x); console.log("for await:", got.join()); })();\nconsole.log("sync end");', 'sync end | done: ABC | for await: 1,2,3');
+    chk2('Node: fs.createReadStream in chunks', '// @env node\n// @file notes.txt\nline one\nline two\n// @file main.js\nconst fs = require("fs");\nconst chunks = [];\nfs.createReadStream("notes.txt", { encoding: "utf8", highWaterMark: 8 })\n  .on("data", c => chunks.push(c))\n  .on("end", () => console.log(chunks.length, chunks.join("").trim().split("\\n").length));', '3 2');
+    const lvCode = id => window.JS_LEVELS.find(l => l.id === id).code;
+    chk2('lesson sharedmem output', lvCode('sharedmem'), 'expected 6, got 3');
+    chk2('lesson nodefs output (same order as real Node)', lvCode('nodefs'), 'sync read: buy milk | script done, the file work is still running | callback read: 30 chars | now 3 todos | caught ENOENT');
+    chk2('lesson nodehttp output (same order as real Node)', lvCode('nodehttp'), 'server got POST /todos | client got 201 created | server got GET /todos | client got 2 todos | server got GET /nope | client got 404');
+    chk2('lesson mutationobs output (same order as a real browser)', lvCode('mutationobs'), 'script done | observer saw 2 changes |  - childList |  - attributes class | promise callback');
+    chk2('lesson commonjs output (same as real Node)', lvCode('commonjs'), 'main starts | math.js is loading | 3.14 3 | Hello Ada, 2 + 2 = 4 | true');
+    chk2('lesson typescript output', lvCode('typescript'), 'Bob (banned) | not found');
+    chk2('lesson streams output', lvCode('streams'), 'pipeline started: chunks arrive later | 3 chunks: GET /HOME | POST /LOGIN | GET /ABOUT');
+    // ---- interview questions: engine output must match real JavaScript
+    const iv = section('🎤 Interview questions (engine output vs real JavaScript)');
+    const polluting = q => /prototype\.my/.test(q.code);
+    for (const Q of window.JS_INTERVIEW.slice().sort((a, b) => polluting(a) - polluting(b))) {
+      if (Q.kind === 'theory') { if (!Q.why || !Q.ask) row(iv, false, Q.id + ' (flashcard has no answer)'); continue; }
+      const e = engine(Q.code);
+      if (e.error) { row(iv, false, Q.id, e.error); continue; }
+      if (e.last.kind !== 'done') { row(iv, false, Q.id, `stopped: ${e.last.kind} ${String(e.last.msg).replace(/<[^>]+>/g, '')}`); continue; }
+      if (Q.expect) { const ok = JSON.stringify(e.lines) === JSON.stringify(Q.expect); row(iv, ok, `${Q.id} (engine vs expected, ${e.steps} steps)`, `engine: ${e.lines.join(' | ')}
+expect: ${Q.expect.join(' | ')}`); continue; }
+      const r = await real(Q.code, 700);
+      const ok = JSON.stringify(e.lines) === JSON.stringify(r);
+      row(iv, ok, `${Q.id} (${e.steps} steps)`, `engine: ${e.lines.join(' | ')}\nreal:   ${r.join(' | ')}`);
+    }
+    const ids = window.JS_INTERVIEW.map(q => q.id);
+    row(iv, new Set(ids).size === ids.length, `${ids.length} questions with unique ids`);
+
+
+    // ---- write it yourself: every exercise must have a starter that fails and a solution that passes
+    const wi = section('✍️ Write it yourself (starter fails, solution passes)');
+    const wiBad = [];
+    let wiOk = 0;
+    for (const id of Object.keys(JSWriteIt.WRITE_IT)) {
+      const q = window.JS_INTERVIEW.find(x => x.id === id);
+      if (!q) { wiBad.push(id + ': no such interview question'); continue; }
+      const c = JSWriteIt.writeItChallenge(q);
+      if (!c) { wiBad.push(id + ': could not build the exercise (function names not found?)'); continue; }
+      const blanks = (c.starter.match(/your code here/g) || []).length;
+      if (blanks < JSWriteIt.WRITE_IT[id].length) { wiBad.push(`${id}: only ${blanks} of ${JSWriteIt.WRITE_IT[id].length} functions were emptied`); continue; }
+      const st = new JSEngine.Interpreter(c.starter, { seed: 1 }).run();
+      if (st.error) { wiBad.push(id + ': starter does not parse: ' + st.error); continue; }
+      const stLines = st.trace[st.trace.length - 1].console.map(l => l.text);
+      if (JSON.stringify(stLines) === JSON.stringify(c.expectOutput)) { wiBad.push(id + ': the empty starter already passes'); continue; }
+      wiOk++;
+    }
+    row(wi, !wiBad.length, `${wiOk} exercises: starter generated, starter fails, reference output known`, wiBad.join('\n'));
+
+    // ---- snapshot cache: every step must look exactly the same with and without the cache
+    const sc = section('⚡ Snapshot cache (fast path = slow path, every step)');
+    const snapKey = s => JSON.stringify([s.heap, s.stack, s.globalMem, s.paused, s.modules, s.workers, s.threads]);
+    const cacheCheck = (label, src) => {
+      let a, b;
+      try {
+        a = new JSEngine.Interpreter(src, { seed: 3, storage: {} }).run();
+        b = new JSEngine.Interpreter(src, { seed: 3, storage: {}, noCache: true }).run();
+      } catch (e) { return { label, bad: 'crash: ' + e.message }; }
+      if (a.error || b.error) return a.error === b.error ? null : { label, bad: 'error differs' };
+      if (a.trace.length !== b.trace.length) return { label, bad: `steps ${a.trace.length} vs ${b.trace.length}` };
+      for (let i = 0; i < a.trace.length; i++) {
+        if (snapKey(a.trace[i]) !== snapKey(b.trace[i])) return { label, bad: `first difference at step ${i + 1}` };
+      }
+      return null;
+    };
+    const cacheProgs = [
+      ['mutate after display', 'const o = { a: 1 }; const list = [o]; o.a = 2; list[0].a = 3; console.log(list[0].a);'],
+      ['array writes by index and length', 'const arr = [1, 2]; arr[1] = 5; arr.length = 1; arr.push(9); arr.sort(); arr.reverse(); console.log(arr.join());'],
+      ['nested child change', 'const a = { child: { x: 1, list: [1] } }; a.child.x = 7; a.child.list.push(2); a.child = { y: 1 }; console.log(a.child.y);'],
+      ['Map and Set', 'const m = new Map(); m.set("k", 1); m.set("k", { v: 2 }); m.get("k").v = 3; const s = new Set([1]); s.add({}); s.delete(1); console.log(m.size, s.size);'],
+      ['promises inside objects', 'const box = { p: new Promise(r => setTimeout(() => r(5), 10)) }; box.p.then(v => { box.v = v; });'],
+      ['prototype and class changes', 'class A { m() { return 1; } } const x = new A(); A.prototype.m = function () { return 2; }; Object.setPrototypeOf(x, {}); Object.freeze(x); console.log(typeof x.m);'],
+    ];
+    const misses = [];
+    for (const [label, src] of cacheProgs) { const r = cacheCheck(label, src); if (r) misses.push(r); else row(sc, true, label); }
+    misses.forEach(m => row(sc, false, m.label, m.bad));
+    let checked = 0;
+    const bigMisses = [];
+    for (const L of window.JS_LEVELS) { checked++; const r = cacheCheck('lesson ' + L.id, L.code); if (r) bigMisses.push(r); }
+    for (const Q of window.JS_INTERVIEW) { if (Q.kind === 'theory') continue; checked++; const r = cacheCheck('interview ' + Q.id, Q.code); if (r) bigMisses.push(r); }
+    row(sc, !bigMisses.length, `${checked} lessons and interview programs: identical snapshots at every step`, bigMisses.map(m => m.label + ': ' + m.bad).join('\n'));
+
+    // ---- 3) challenges: the sample solution must pass, the starter code must not
+    const ch = section('🏋️ Challenges (solution passes, starter fails)');
+    const check = (c, code) => {
+      const problems = [];
+      (c.mustUse || []).forEach(m => { if (!m.re.test(code)) problems.push('missing: ' + m.msg); });
+      (c.mustNotUse || []).forEach(m => { if (m.re.test(code)) problems.push('forbidden: ' + m.msg); });
+      const base = engine(code);
+      if (base.error) return [base.error];
+      if (c.expectOutput && base.lines.join('\n') !== c.expectOutput.join('\n')) problems.push('output: ' + base.lines.join(' | '));
+      (c.tests || []).forEach(t => {
+        const r = engine(code + '\n;' + t.run);
+        const got = r.error || r.lines.slice(base.lines.length).join('\n');
+        if (got !== t.expect) problems.push(`${t.run} → ${got}`);
+      });
+      return problems;
+    };
+    for (const c of window.JS_CHALLENGES) {
+      const good = check(c, c.solution);
+      row(ch, !good.length, `${c.id}: solution passes`, good.join('\n'));
+      row(ch, check(c, c.starter).length > 0, `${c.id}: starter code does not pass yet`);
+    }
+
+    // ---- 4) the line explainer never crashes
+    const ex = section('💡 Line explainer');
+    let explained = 0, crashes = [];
+    for (const L of window.JS_LEVELS) {
+      L.code.split('\n').forEach((_, i) => {
+        try { if (JSExplain.explainLine(L.code, i + 1)) explained++; } catch (e) { crashes.push(`${L.id}:${i + 1} ${e.message}`); }
+      });
+    }
+    row(ex, !crashes.length, `explained ${explained} lines across all levels`, crashes.join('\n'));
+
+    document.getElementById('sum').innerHTML = `<span class="${fail ? 'bad' : 'ok'}">${fail ? '✘' : '✔'} ${pass} passed, ${fail} failed</span>`;
+    document.title = (fail ? 'FAIL ' : 'PASS ') + document.title;
+  })();
+  </script>
+</body>
+</html>
